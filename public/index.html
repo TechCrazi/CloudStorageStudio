@@ -1,0 +1,543 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CloudStorageStudio</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body data-theme="gray">
+    <main>
+      <section class="card top-bar">
+        <h1>CloudStorageStudio</h1>
+        <div class="top-provider-block">
+          <div class="top-provider-row">
+            <div id="providerTabs" class="provider-tabs" role="tablist" aria-label="Cloud providers">
+              <button class="provider-tab" data-provider="unified" role="tab" aria-selected="false">Unified</button>
+              <button class="provider-tab active" data-provider="azure" role="tab" aria-selected="true">Azure</button>
+              <button class="provider-tab" data-provider="aws" role="tab" aria-selected="false">AWS</button>
+              <button class="provider-tab" data-provider="gcp" role="tab" aria-selected="false">GCP</button>
+              <button class="provider-tab" data-provider="wasabi" role="tab" aria-selected="false">Wasabi</button>
+              <button class="provider-tab" data-provider="other" role="tab" aria-selected="false">Other</button>
+            </div>
+            <div class="top-tools">
+              <button
+                id="ipAliasTabBtn"
+                class="provider-tab top-tool-tab"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                aria-controls="ipAliasGlobalPanel"
+              >
+                IP map
+              </button>
+              <button id="themeToggleBtn" class="theme-toggle-btn" type="button" aria-label="Toggle theme: gray mode" title="Toggle theme">
+                <svg class="theme-toggle-icon" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+                  <circle cx="24" cy="24" r="19" fill="none" />
+                  <path d="M24 5a19 19 0 0 0 0 38z" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="ipAliasGlobalPanel" class="card ip-alias-global-panel" hidden>
+        <h2>IP mapping</h2>
+        <p class="muted">Shared across all providers. Format: `IP, Server name` one per line.</p>
+          <div class="ip-alias-import">
+            <label for="ipAliasInput" class="security-label">IP mapping import</label>
+            <textarea
+              id="ipAliasInput"
+              class="ip-alias-input"
+            rows="3"
+            placeholder="65.51.188.86, ACH App Server&#10;72.3.141.145, LK Proxy East"
+          ></textarea>
+            <div class="toolbar">
+              <button id="importIpAliasBtn" type="button">Import IP map</button>
+              <button id="reloadIpAliasBtn" type="button">Reload map</button>
+              <button id="exportIpAliasBtn" type="button">Export IP map CSV</button>
+              <span id="ipAliasStatus" class="muted ip-alias-status">No IP map loaded.</span>
+            </div>
+          </div>
+        </section>
+
+      <section id="providerPanelUnified" class="card provider-panel">
+        <h2>Unified provider stats</h2>
+        <p class="muted">Consolidated cached metrics and estimated costs by provider for last 24h and last 30d windows.</p>
+        <div class="table-wrap unified-stats-wrap">
+          <table class="unified-stats-table">
+            <thead>
+              <tr>
+                <th>Provider</th>
+                <th>Accounts</th>
+                <th>Storage in use</th>
+                <th>Egress (24h)</th>
+                <th>Egress (30d)</th>
+                <th>Ingress (24h)</th>
+                <th>Ingress (30d)</th>
+                <th>Txns (24h)</th>
+                <th>Txns (30d)</th>
+                <th>Est. cost (24h)</th>
+                <th>Est. cost (30d)</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody id="unifiedStatsBody"></tbody>
+          </table>
+        </div>
+        <p id="unifiedStatsCoverage" class="muted compact-text scope-totals-coverage">No provider stats loaded yet.</p>
+        <p id="unifiedPricingAssumptions" class="muted compact-text scope-pricing-assumptions"></p>
+      </section>
+
+      <section id="providerPanelAzure" class="provider-panel provider-panel-active">
+        <section class="card">
+          <div class="azure-scope-split">
+            <div class="azure-scope-left">
+              <div class="section-head">
+                <h2>Azure account scopes</h2>
+                <span class="pill small-pill">Future: tenant/account tabs</span>
+              </div>
+              <p class="muted azure-intro">
+                Use Azure service principal credentials from server config to inventory storage account containers with cached sizes.
+              </p>
+              <div id="azureScopeTabs" class="subtabs"></div>
+              <p id="azureScopeHint" class="muted compact-text"></p>
+              <div class="toolbar azure-meta-row">
+                <button id="refreshSubsBtn" disabled>Load subscriptions</button>
+                <span id="userInfo" class="pill small-pill service-pill">Service principal not configured</span>
+              </div>
+              <div class="subscriptions-compact">
+                <h3 class="subscriptions-compact-title">Subscriptions</h3>
+                <div id="subsList" class="checklist subscriptions-checklist"></div>
+                <div class="toolbar subscriptions-toolbar">
+                  <button id="saveSubsBtn" disabled>Save selection</button>
+                  <button id="syncAccountsBtn" disabled>Load storage accounts</button>
+                  <button id="pullAllBtn" disabled>Pull all containers + sizes</button>
+                  <button id="pullAllMetricsBtn" disabled>Pull all metrics (24h + 30d)</button>
+                  <button id="pullAllSecurityBtn" disabled>Pull all security profiles</button>
+                </div>
+              </div>
+            </div>
+
+            <aside class="azure-scope-right" aria-label="Scope totals">
+              <h3 class="subscriptions-compact-title scope-totals-title">Scope totals</h3>
+              <div class="inline-table-wrap scope-totals-wrap">
+                <table class="scope-totals-table">
+                  <thead>
+                    <tr>
+                      <th>Metric</th>
+                      <th>Total (24h)</th>
+                      <th>Total (30d)</th>
+                      <th>Est. cost (24h)</th>
+                      <th>Est. cost (30d)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>Used capacity</td>
+                      <td id="scopeTotalUsedCap">0 B</td>
+                      <td id="scopeTotalUsedCap30d">0 B</td>
+                      <td id="scopeCostUsedCap24h">$0.00</td>
+                      <td id="scopeCostUsedCap30d">$0.00</td>
+                    </tr>
+                    <tr>
+                      <td>Egress (24h)</td>
+                      <td id="scopeTotalEgress24h">0 B</td>
+                      <td>-</td>
+                      <td id="scopeCostEgress24h">$0.00</td>
+                      <td>-</td>
+                    </tr>
+                    <tr>
+                      <td>Egress (30d)</td>
+                      <td>-</td>
+                      <td id="scopeTotalEgress30d">0 B</td>
+                      <td>-</td>
+                      <td id="scopeCostEgress30d">$0.00</td>
+                    </tr>
+                    <tr>
+                      <td>Ingress (24h)</td>
+                      <td id="scopeTotalIngress24h">0 B</td>
+                      <td>-</td>
+                      <td id="scopeCostIngress24h">$0.00</td>
+                      <td>-</td>
+                    </tr>
+                    <tr>
+                      <td>Ingress (30d)</td>
+                      <td>-</td>
+                      <td id="scopeTotalIngress30d">0 B</td>
+                      <td>-</td>
+                      <td id="scopeCostIngress30d">$0.00</td>
+                    </tr>
+                    <tr>
+                      <td>Transactions (24h)</td>
+                      <td id="scopeTotalTransactions24h">0</td>
+                      <td>-</td>
+                      <td id="scopeCostTransactions24h">$0.00</td>
+                      <td>-</td>
+                    </tr>
+                    <tr>
+                      <td>Transactions (30d)</td>
+                      <td>-</td>
+                      <td id="scopeTotalTransactions30d">0</td>
+                      <td>-</td>
+                      <td id="scopeCostTransactions30d">$0.00</td>
+                    </tr>
+                    <tr class="scope-total-row">
+                      <td>Estimated total</td>
+                      <td>-</td>
+                      <td>-</td>
+                      <td id="scopeCostTotal24h">$0.00</td>
+                      <td id="scopeCostTotal30d">$0.00</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p id="scopeTotalsCoverage" class="muted compact-text scope-totals-coverage">0 account(s) in scope.</p>
+              <p id="scopePricingAssumptions" class="muted compact-text scope-pricing-assumptions"></p>
+            </aside>
+          </div>
+        </section>
+
+        <section class="card azure-content-nav">
+          <div id="azureContentTabs" class="subtabs azure-content-tabs" role="tablist" aria-label="Azure views">
+            <button class="subtab active" data-azure-view="inventory" role="tab" aria-selected="true">Storage + containers</button>
+            <button class="subtab" data-azure-view="security" role="tab" aria-selected="false">Security view</button>
+          </div>
+        </section>
+
+        <section id="azureInventoryView" class="card azure-content-view azure-content-view-active">
+          <h2>Storage accounts</h2>
+          <div class="toolbar view-toolbar">
+            <button id="azureExportInventoryBtn" type="button" disabled>Export storage + containers CSV</button>
+          </div>
+          <div class="search-row">
+            <input
+              id="accountSearchInput"
+              class="search-input"
+              type="search"
+              placeholder="Search account, subscription, resource group, tags, or metric values"
+            />
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th class="toggle-col"></th>
+                  <th><button type="button" class="sort-header-btn" data-sort-key="name" data-sort-label="Name">Name <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                  <th><button type="button" class="sort-header-btn" data-sort-key="subscription" data-sort-label="Subscription">Subscription <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                  <th><button type="button" class="sort-header-btn" data-sort-key="resourceGroup" data-sort-label="Resource group">Resource group <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                  <th><button type="button" class="sort-header-btn" data-sort-key="region" data-sort-label="Region">Region <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                  <th><button type="button" class="sort-header-btn" data-sort-key="tags" data-sort-label="Tags">Tags <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                  <th><button type="button" class="sort-header-btn" data-sort-key="containers" data-sort-label="Containers">Containers <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                  <th><button type="button" class="sort-header-btn" data-sort-key="totalSize" data-sort-label="Total size">Total size <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                  <th><button type="button" class="sort-header-btn" data-sort-key="usedCapacity" data-sort-label="Used capacity">Used cap <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                  <th><button type="button" class="sort-header-btn" data-sort-key="egress24h" data-sort-label="Egress 24h">Egress 24h <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                  <th><button type="button" class="sort-header-btn" data-sort-key="ingress24h" data-sort-label="Ingress 24h">Ingress 24h <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                  <th><button type="button" class="sort-header-btn" data-sort-key="transactions24h" data-sort-label="Transactions 24h">Txns 24h <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                  <th><button type="button" class="sort-header-btn" data-sort-key="lastSizePull" data-sort-label="Last size pull">Last size pull <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                  <th><button type="button" class="sort-header-btn" data-sort-key="lastMetricsPull" data-sort-label="Last metrics pull">Last metrics pull <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                  <th>Progress</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="accountsBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="azureSecurityView" class="card azure-content-view">
+          <h2>Security details</h2>
+          <p class="muted">All accounts in scope. Click + to expand full security profile details for an account.</p>
+          <div class="toolbar view-toolbar">
+            <button id="azureExportSecurityBtn" type="button" disabled>Export security CSV</button>
+          </div>
+          <div class="search-row">
+            <input
+              id="securitySearchInput"
+              class="search-input"
+              type="search"
+              placeholder="Search account, subscription, group, network setting, IP, or error"
+            />
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th class="toggle-col"></th>
+                  <th>Account</th>
+                  <th>Subscription</th>
+                  <th>Resource group</th>
+                  <th>Last scanned</th>
+                  <th>Public network</th>
+                  <th>TLS minimum</th>
+                  <th>Lifecycle</th>
+                  <th>IP rules</th>
+                  <th>Allowed IPs</th>
+                  <th>Error</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="securityAccountsBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+      </section>
+
+      <section id="providerPanelAws" class="card provider-panel">
+        <h2>AWS</h2>
+        <div class="toolbar provider-load-row">
+          <button id="awsLoadBtn" disabled>Fetch AWS data (low cost)</button>
+          <button id="awsSecurityLoadBtn" disabled>Pull security posture</button>
+          <button id="awsDeepLoadBtn" disabled>Deep scan (paid API)</button>
+          <button id="awsExportAllBtn" disabled>Export all AWS CSV</button>
+          <span id="awsConfigInfo" class="pill small-pill service-pill">No AWS account configured</span>
+        </div>
+        <p class="muted">Default mode uses low-cost AWS APIs (bucket list + CloudWatch storage/object metrics) plus EFS inventory. Use “Pull security posture” for bucket security settings and Deep scan only when you need full object-walk details.</p>
+        <div class="inline-table-wrap wasabi-totals-wrap">
+          <table class="wasabi-totals-table">
+            <thead>
+              <tr>
+                <th>Metric</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Total storage</td>
+                <td id="awsTotalStorage">0 B</td>
+              </tr>
+              <tr>
+                <td>Total objects</td>
+                <td id="awsTotalObjects">0</td>
+              </tr>
+              <tr>
+                <td>Total EFS file systems</td>
+                <td id="awsTotalEfsCount">0</td>
+              </tr>
+              <tr>
+                <td>Total EFS usage</td>
+                <td id="awsTotalEfsStorage">0 B</td>
+              </tr>
+              <tr>
+                <td>Egress (24h)</td>
+                <td id="awsTotalEgress24h">-</td>
+              </tr>
+              <tr>
+                <td>Ingress (24h)</td>
+                <td id="awsTotalIngress24h">-</td>
+              </tr>
+              <tr>
+                <td>Transactions (24h)</td>
+                <td id="awsTotalTransactions24h">-</td>
+              </tr>
+              <tr>
+                <td>Egress (30d)</td>
+                <td id="awsTotalEgress30d">-</td>
+              </tr>
+              <tr>
+                <td>Ingress (30d)</td>
+                <td id="awsTotalIngress30d">-</td>
+              </tr>
+              <tr>
+                <td>Transactions (30d)</td>
+                <td id="awsTotalTransactions30d">-</td>
+              </tr>
+              <tr>
+                <td>Estimated cost (24h)</td>
+                <td id="awsEstimatedCost24h">$0.00</td>
+              </tr>
+              <tr>
+                <td>Estimated cost (30d)</td>
+                <td id="awsEstimatedCost30d">$0.00</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p id="awsTotalsCoverage" class="muted compact-text scope-totals-coverage">0 account(s) loaded.</p>
+        <p id="awsNotes" class="muted compact-text scope-pricing-assumptions"></p>
+        <section class="card azure-content-nav">
+          <div id="awsContentTabs" class="subtabs azure-content-tabs" role="tablist" aria-label="AWS views">
+            <button class="subtab active" data-aws-view="inventory" role="tab" aria-selected="true">Storage + buckets</button>
+            <button class="subtab" data-aws-view="security" role="tab" aria-selected="false">Security view</button>
+          </div>
+        </section>
+
+        <section id="awsInventoryView" class="card azure-content-view azure-content-view-active">
+          <div class="search-row">
+            <input
+              id="awsSearchInput"
+              class="search-input"
+              type="search"
+              placeholder="Search account, bucket, region, endpoint, metric values, or error"
+            />
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead id="awsAccountsTableHead">
+                <tr>
+                  <th class="toggle-col"></th>
+                  <th><button type="button" class="sort-header-btn" data-aws-sort-key="account" data-aws-sort-label="Account">Account <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                  <th><button type="button" class="sort-header-btn" data-aws-sort-key="region" data-aws-sort-label="Region">Region <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                  <th><button type="button" class="sort-header-btn" data-aws-sort-key="buckets" data-aws-sort-label="Buckets">Buckets <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                  <th><button type="button" class="sort-header-btn" data-aws-sort-key="efsCount" data-aws-sort-label="EFS file systems">EFS FS <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                  <th><button type="button" class="sort-header-btn" data-aws-sort-key="totalUsage" data-aws-sort-label="Total usage">Storage total <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                  <th><button type="button" class="sort-header-btn" data-aws-sort-key="totalObjects" data-aws-sort-label="Total objects">Total objects <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                  <th><button type="button" class="sort-header-btn" data-aws-sort-key="egress24h" data-aws-sort-label="Egress 24h">Egress 24h <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                  <th><button type="button" class="sort-header-btn" data-aws-sort-key="ingress24h" data-aws-sort-label="Ingress 24h">Ingress 24h <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                  <th><button type="button" class="sort-header-btn" data-aws-sort-key="txns24h" data-aws-sort-label="Txns 24h">Txns 24h <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                  <th><button type="button" class="sort-header-btn" data-aws-sort-key="estCost24h" data-aws-sort-label="Estimated cost 24h">Est. cost 24h <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                  <th><button type="button" class="sort-header-btn" data-aws-sort-key="lastSync" data-aws-sort-label="Last sync">Last sync <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                  <th><button type="button" class="sort-header-btn" data-aws-sort-key="error" data-aws-sort-label="Error">Error <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="awsAccountsBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="awsSecurityView" class="card azure-content-view">
+          <h2>AWS security details</h2>
+          <p class="muted">Account-level security coverage and per-bucket posture from cached scans.</p>
+          <div class="search-row">
+            <input
+              id="awsSecuritySearchInput"
+              class="search-input"
+              type="search"
+              placeholder="Search account, region, bucket, security coverage, or error"
+            />
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th class="toggle-col"></th>
+                  <th>Account</th>
+                  <th>Region</th>
+                  <th>Buckets</th>
+                  <th>Scanned</th>
+                  <th>Coverage</th>
+                  <th>Sec errors</th>
+                  <th>Last sec scan</th>
+                  <th>Error</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="awsSecurityAccountsBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section id="providerPanelGcp" class="card provider-panel">
+        <h2>GCP</h2>
+        <div class="toolbar provider-load-row">
+          <button id="gcpLoadBtn" disabled>Load GCP accounts</button>
+        </div>
+        <p class="muted">Coming next: multiple GCP account tabs, Cloud Storage inventory, IAM/security checks, and reporting export.</p>
+      </section>
+
+      <section id="providerPanelWasabi" class="card provider-panel">
+        <h2>Wasabi</h2>
+        <div class="toolbar provider-load-row">
+          <button id="wasabiLoadBtn" disabled>Fetch Wasabi data</button>
+          <button id="wasabiExportAllBtn" disabled>Export all Wasabi CSV</button>
+          <span id="wasabiConfigInfo" class="pill small-pill service-pill">No Wasabi account configured</span>
+        </div>
+        <p class="muted">Uses server-side Wasabi credentials. Data is cached in SQLite and refreshed on demand or every 24 hours.</p>
+        <div class="inline-table-wrap wasabi-totals-wrap">
+          <table class="wasabi-totals-table">
+            <thead>
+              <tr>
+                <th>Metric</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Total storage</td>
+                <td id="wasabiTotalStorage">0 B</td>
+              </tr>
+              <tr>
+                <td>Total objects</td>
+                <td id="wasabiTotalObjects">0</td>
+              </tr>
+              <tr>
+                <td>Estimated cost (24h)</td>
+                <td id="wasabiEstimatedCost24h">$0.00</td>
+              </tr>
+              <tr>
+                <td>Estimated cost (30d)</td>
+                <td id="wasabiEstimatedCost30d">$0.00</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p id="wasabiTotalsCoverage" class="muted compact-text scope-totals-coverage">0 account(s) loaded.</p>
+        <p id="wasabiPricingAssumptions" class="muted compact-text scope-pricing-assumptions"></p>
+        <div class="search-row">
+          <input
+            id="wasabiSearchInput"
+            class="search-input"
+            type="search"
+            placeholder="Search account, bucket, error, or endpoint"
+          />
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead id="wasabiAccountsTableHead">
+              <tr>
+                <th class="toggle-col"></th>
+                <th><button type="button" class="sort-header-btn" data-wasabi-sort-key="account" data-wasabi-sort-label="Account">Account <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                <th><button type="button" class="sort-header-btn" data-wasabi-sort-key="region" data-wasabi-sort-label="Region">Region <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                <th><button type="button" class="sort-header-btn" data-wasabi-sort-key="buckets" data-wasabi-sort-label="Buckets">Buckets <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                <th><button type="button" class="sort-header-btn" data-wasabi-sort-key="totalUsage" data-wasabi-sort-label="Total usage">Total usage <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                <th><button type="button" class="sort-header-btn" data-wasabi-sort-key="totalObjects" data-wasabi-sort-label="Total objects">Total objects <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                <th><button type="button" class="sort-header-btn" data-wasabi-sort-key="estimated24h" data-wasabi-sort-label="Estimated 24h">Est. 24h <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                <th><button type="button" class="sort-header-btn" data-wasabi-sort-key="estimated30d" data-wasabi-sort-label="Estimated 30d">Est. 30d <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                <th><button type="button" class="sort-header-btn" data-wasabi-sort-key="lastSync" data-wasabi-sort-label="Last sync">Last sync <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                <th><button type="button" class="sort-header-btn" data-wasabi-sort-key="error" data-wasabi-sort-label="Error">Error <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="wasabiAccountsBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="providerPanelOther" class="card provider-panel">
+        <h2>Other providers</h2>
+        <div class="toolbar provider-load-row">
+          <button id="otherLoadBtn" disabled>Load provider accounts</button>
+        </div>
+        <p class="muted">Provider plugin layout is now in place, so additional clouds can be added as dedicated tabs with account sub-tabs.</p>
+      </section>
+
+    </main>
+
+    <button id="activityToggleBtn" class="activity-fab" type="button">Activity</button>
+    <aside id="activityDrawer" class="activity-drawer">
+      <div
+        id="activityResizeHandle"
+        class="activity-resize-handle"
+        role="separator"
+        aria-label="Resize activity panel"
+        aria-orientation="vertical"
+        tabindex="0"
+      ></div>
+      <div class="activity-header">
+        <h2>Activity</h2>
+        <div class="activity-actions">
+          <button id="activityShrinkBtn" type="button" class="ghost-btn activity-size-btn">Shrink</button>
+          <button id="activityExpandBtn" type="button" class="ghost-btn activity-size-btn">Expand</button>
+          <button id="activityCloseBtn" type="button" class="ghost-btn">Close</button>
+        </div>
+      </div>
+      <pre id="log"></pre>
+    </aside>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
