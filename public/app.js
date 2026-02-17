@@ -206,10 +206,12 @@ const ACTIVITY_DRAWER_WIDTH_STEP = 120;
 const ALLOWED_PROVIDERS = new Set(['unified', 'azure', 'aws', 'gcp', 'wasabi', 'vsax', 'other']);
 const ALLOWED_AZURE_VIEWS = new Set(['inventory', 'security']);
 const ALLOWED_AWS_VIEWS = new Set(['inventory', 'security']);
-const ALLOWED_THEME_MODES = new Set(['gray', 'dark']);
+const ALLOWED_THEME_MODES = new Set(['gray', 'dark', 'ellkay']);
+const THEME_MODE_ORDER = ['gray', 'dark', 'ellkay'];
 const THEME_MODE_LABELS = {
   gray: 'Gray',
-  dark: 'Dark'
+  dark: 'Dark',
+  ellkay: 'ELLKAY'
 };
 const DEFAULT_PRICING_ASSUMPTIONS = {
   currency: 'USD',
@@ -354,7 +356,7 @@ function applyThemeMode(mode, persist = true) {
 
 function loadThemeMode() {
   const saved = localStorage.getItem(THEME_MODE_KEY);
-  const normalized = saved === 'dark' ? 'dark' : 'gray';
+  const normalized = ALLOWED_THEME_MODES.has(saved) ? saved : 'gray';
   applyThemeMode(normalized, false);
 }
 
@@ -375,7 +377,8 @@ function loadNavigationState() {
 }
 
 function toggleThemeMode() {
-  const next = state.themeMode === 'dark' ? 'gray' : 'dark';
+  const currentIndex = THEME_MODE_ORDER.indexOf(state.themeMode);
+  const next = THEME_MODE_ORDER[(currentIndex + 1 + THEME_MODE_ORDER.length) % THEME_MODE_ORDER.length];
   applyThemeMode(next, true);
 }
 

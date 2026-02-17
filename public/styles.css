@@ -1,5 +1,8 @@
 :root {
   color-scheme: light;
+  --font-body: "IBM Plex Sans", "Segoe UI", sans-serif;
+  --font-heading: "IBM Plex Sans", "Segoe UI", sans-serif;
+  --font-ui: "IBM Plex Sans", "Segoe UI", sans-serif;
   --bg-start: #ffffff;
   --bg: #f4f6fb;
   --card: #ffffff;
@@ -17,6 +20,12 @@
   --focus-ring: rgba(0, 87, 216, 0.14);
   --card-shadow: 0 8px 14px rgba(31, 48, 86, 0.08);
   --progress-track-bg: #e7edf8;
+  --progress-fill-start: #1570ef;
+  --progress-fill-end: #0a4dc0;
+  --progress-run-a: #1d66db;
+  --progress-run-b: #4f8ef0;
+  --progress-error: #be2a2a;
+  --progress-done: #1e7a47;
   --tab-active-bg: #eaf1ff;
   --tab-active-text: #0c3f94;
   --subtab-active-bg: #ebf2ff;
@@ -48,6 +57,12 @@ body[data-theme="gray"] {
   --focus-ring: rgba(37, 99, 235, 0.18);
   --card-shadow: 0 8px 14px rgba(34, 47, 69, 0.12);
   --progress-track-bg: #dce3ee;
+  --progress-fill-start: #1570ef;
+  --progress-fill-end: #0a4dc0;
+  --progress-run-a: #1d66db;
+  --progress-run-b: #4f8ef0;
+  --progress-error: #be2a2a;
+  --progress-done: #1e7a47;
   --tab-active-bg: #dce6f8;
   --tab-active-text: #173f8a;
   --subtab-active-bg: #dbe5f5;
@@ -80,6 +95,12 @@ body[data-theme="dark"] {
   --focus-ring: rgba(77, 141, 255, 0.28);
   --card-shadow: 0 8px 16px rgba(0, 0, 0, 0.35);
   --progress-track-bg: #23334b;
+  --progress-fill-start: #4d8dff;
+  --progress-fill-end: #2c67d9;
+  --progress-run-a: #326bcf;
+  --progress-run-b: #5b94f8;
+  --progress-error: #ff7c7c;
+  --progress-done: #57c487;
   --tab-active-bg: #1d3354;
   --tab-active-text: #cfe0ff;
   --subtab-active-bg: #1b3152;
@@ -94,13 +115,55 @@ body[data-theme="dark"] {
   --resize-handle-active: #7cabff;
 }
 
+body[data-theme="ellkay"] {
+  color-scheme: light;
+  --font-body: "Montserrat", "Segoe UI", sans-serif;
+  --font-heading: "Futura PT", "Futura", "Montserrat", sans-serif;
+  --font-ui: "Futura PT", "Futura", "Montserrat", sans-serif;
+  --bg-start: #ffffff;
+  --bg: #f2f2f2;
+  --card: #ffffff;
+  --surface-soft: #f7f7f7;
+  --table-head-bg: #f3f3f3;
+  --line: #e4e4e4;
+  --text: #414142;
+  --muted: #666666;
+  --accent: #fea31c;
+  --accent-2: #feb602;
+  --danger: #c2362f;
+  --ok: #2f8a71;
+  --input-bg: #ffffff;
+  --button-bg: #ffffff;
+  --focus-ring: rgba(254, 163, 28, 0.2);
+  --card-shadow: 0 2px 5px rgba(0, 0, 0, 0.18);
+  --progress-track-bg: #ececec;
+  --progress-fill-start: #fea31c;
+  --progress-fill-end: #feb602;
+  --progress-run-a: #fea31c;
+  --progress-run-b: #ffc608;
+  --progress-error: #d44a3c;
+  --progress-done: #58c1a9;
+  --tab-active-bg: #fff7e8;
+  --tab-active-text: #414142;
+  --subtab-active-bg: #fff8eb;
+  --activity-bg: #202020;
+  --activity-text: #ffffff;
+  --fab-bg: #414142;
+  --fab-border: #666666;
+  --fab-border-hover: #fea31c;
+  --drawer-bg: #ffffff;
+  --drawer-shadow: -10px 0 24px rgba(0, 0, 0, 0.2);
+  --resize-handle: #d4d4d4;
+  --resize-handle-active: #fea31c;
+}
+
 * {
   box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  font-family: var(--font-body);
   background: radial-gradient(circle at top left, var(--bg-start) 0%, var(--bg) 45%);
   color: var(--text);
 }
@@ -150,7 +213,7 @@ main {
 .progress-fill {
   height: 100%;
   width: 0%;
-  background: linear-gradient(90deg, #1570ef, #0a4dc0);
+  background: linear-gradient(90deg, var(--progress-fill-start), var(--progress-fill-end));
   transition: width 180ms ease;
 }
 
@@ -158,20 +221,20 @@ main {
   width: 100% !important;
   background: repeating-linear-gradient(
     45deg,
-    #1d66db 0px,
-    #1d66db 12px,
-    #4f8ef0 12px,
-    #4f8ef0 24px
+    var(--progress-run-a) 0px,
+    var(--progress-run-a) 12px,
+    var(--progress-run-b) 12px,
+    var(--progress-run-b) 24px
   );
   animation: progressPulse 1s linear infinite;
 }
 
 .progress-error .progress-fill {
-  background: #be2a2a;
+  background: var(--progress-error);
 }
 
 .progress-done .progress-fill {
-  background: #1e7a47;
+  background: var(--progress-done);
 }
 
 .progress-label {
@@ -183,6 +246,8 @@ main {
 h1,
 h2 {
   margin: 0 0 8px;
+  font-family: var(--font-heading);
+  font-weight: 600;
 }
 
 p {
@@ -688,6 +753,8 @@ button {
   border-radius: 8px;
   padding: 8px 12px;
   cursor: pointer;
+  font-family: var(--font-ui);
+  font-weight: 500;
 }
 
 button:hover:enabled {
@@ -714,6 +781,7 @@ button.primary:hover:enabled {
   border-radius: 999px;
   padding: 8px 12px;
   font-size: 13px;
+  font-family: var(--font-ui);
 }
 
 .checklist {
@@ -749,6 +817,8 @@ td {
 
 th {
   background: var(--table-head-bg);
+  font-family: var(--font-ui);
+  font-weight: 600;
 }
 
 .sort-header-btn {
