@@ -7,6 +7,7 @@ const ui = {
   providerPanelAws: document.getElementById('providerPanelAws'),
   providerPanelGcp: document.getElementById('providerPanelGcp'),
   providerPanelWasabi: document.getElementById('providerPanelWasabi'),
+  providerPanelVsax: document.getElementById('providerPanelVsax'),
   providerPanelOther: document.getElementById('providerPanelOther'),
   unifiedStatsBody: document.getElementById('unifiedStatsBody'),
   unifiedStatsCoverage: document.getElementById('unifiedStatsCoverage'),
@@ -62,6 +63,19 @@ const ui = {
   wasabiSearchInput: document.getElementById('wasabiSearchInput'),
   wasabiAccountsTableHead: document.getElementById('wasabiAccountsTableHead'),
   wasabiAccountsBody: document.getElementById('wasabiAccountsBody'),
+  vsaxRefreshGroupsBtn: document.getElementById('vsaxRefreshGroupsBtn'),
+  vsaxLoadBtn: document.getElementById('vsaxLoadBtn'),
+  saveVsaxGroupsBtn: document.getElementById('saveVsaxGroupsBtn'),
+  vsaxGroupList: document.getElementById('vsaxGroupList'),
+  vsaxConfigInfo: document.getElementById('vsaxConfigInfo'),
+  vsaxTotalAllocated: document.getElementById('vsaxTotalAllocated'),
+  vsaxTotalUsed: document.getElementById('vsaxTotalUsed'),
+  vsaxEstimatedCost24h: document.getElementById('vsaxEstimatedCost24h'),
+  vsaxEstimatedCost30d: document.getElementById('vsaxEstimatedCost30d'),
+  vsaxTotalsCoverage: document.getElementById('vsaxTotalsCoverage'),
+  vsaxPricingAssumptions: document.getElementById('vsaxPricingAssumptions'),
+  vsaxSearchInput: document.getElementById('vsaxSearchInput'),
+  vsaxGroupsBody: document.getElementById('vsaxGroupsBody'),
   otherLoadBtn: document.getElementById('otherLoadBtn'),
   userInfo: document.getElementById('userInfo'),
   subsList: document.getElementById('subsList'),
@@ -153,6 +167,15 @@ const state = {
   expandedWasabiAccountIds: new Set(),
   wasabiSyncingAccountIds: new Set(),
   wasabiSyncAllActive: false,
+  vsaxGroups: [],
+  vsaxDisksByGroup: {},
+  vsaxDiskLoadErrorsByGroup: {},
+  vsaxLoadingDisksByGroup: {},
+  expandedVsaxGroupNames: new Set(),
+  vsaxSyncingGroupNames: new Set(),
+  vsaxSyncAllActive: false,
+  vsaxAvailableGroups: [],
+  vsaxSelectedGroupNames: [],
   logLines: [],
   activityDrawerWidth: 460,
   accountSort: {
@@ -179,7 +202,7 @@ const ACTIVITY_DRAWER_WIDTH_DEFAULT = 460;
 const ACTIVITY_DRAWER_WIDTH_MIN = 340;
 const ACTIVITY_DRAWER_WIDTH_MAX = 1400;
 const ACTIVITY_DRAWER_WIDTH_STEP = 120;
-const ALLOWED_PROVIDERS = new Set(['unified', 'azure', 'aws', 'gcp', 'wasabi', 'other']);
+const ALLOWED_PROVIDERS = new Set(['unified', 'azure', 'aws', 'gcp', 'wasabi', 'vsax', 'other']);
 const ALLOWED_AZURE_VIEWS = new Set(['inventory', 'security']);
 const ALLOWED_AWS_VIEWS = new Set(['inventory', 'security']);
 const ALLOWED_THEME_MODES = new Set(['gray', 'dark']);
@@ -221,6 +244,15 @@ const DEFAULT_WASABI_PRICING_ASSUMPTIONS = {
   daysInMonth: 30,
   storagePricePerTbMonth: 9,
   minimumBillableTb: 1
+};
+
+const DEFAULT_VSAX_PRICING_ASSUMPTIONS = {
+  currency: 'USD',
+  source: 'https://www.kaseya.com/pricing/',
+  asOfDate: '2026-02-17',
+  bytesPerTb: 1099511627776,
+  daysInMonth: 30,
+  storagePricePerTbMonth: 120
 };
 
 const DEFAULT_AWS_PRICING_ASSUMPTIONS = {
@@ -729,6 +761,7 @@ function renderProviderPanels() {
     aws: ui.providerPanelAws,
     gcp: ui.providerPanelGcp,
     wasabi: ui.providerPanelWasabi,
+    vsax: ui.providerPanelVsax,
     other: ui.providerPanelOther
   };
 
@@ -749,6 +782,7 @@ function renderProviderPanels() {
   syncPullButtonsDisabledState();
   syncAwsButtonsDisabledState();
   syncWasabiButtonsDisabledState();
+  syncVsaxButtonsDisabledState();
   renderAwsContentViews();
   renderUnifiedStats();
 }
@@ -768,6 +802,9 @@ function setActiveProvider(provider, options = {}) {
   }
   if (provider === 'wasabi' && !state.wasabiAccounts.length) {
     void refreshWasabiAccountsFromCache();
+  }
+  if (provider === 'vsax' && !state.vsaxGroups.length) {
+    void refreshVsaxGroupsFromCache();
   }
 }
 
@@ -835,6 +872,15 @@ function renderAzureScopeTabs() {
 
 function selectedSubscriptionIds() {
   return Array.from(ui.subsList.querySelectorAll('input[type="checkbox"]:checked')).map((el) => el.value);
+}
+
+function selectedVsaxGroupNames() {
+  if (!ui.vsaxGroupList) {
+    return [];
+  }
+  return Array.from(ui.vsaxGroupList.querySelectorAll('input[type="checkbox"]:checked'))
+    .map((el) => String(el.value || '').trim())
+    .filter(Boolean);
 }
 
 function clamp(value, min, max) {
@@ -960,8 +1006,10 @@ async function runCsvExport(actionLabel, runner, options = {}) {
   syncPullButtonsDisabledState();
   syncAwsButtonsDisabledState();
   syncWasabiButtonsDisabledState();
+  syncVsaxButtonsDisabledState();
   renderAwsAccounts();
   renderWasabiAccounts();
+  renderVsaxGroups();
 
   try {
     await runner();
@@ -974,8 +1022,10 @@ async function runCsvExport(actionLabel, runner, options = {}) {
     syncPullButtonsDisabledState();
     syncAwsButtonsDisabledState();
     syncWasabiButtonsDisabledState();
+    syncVsaxButtonsDisabledState();
     renderAwsAccounts();
     renderWasabiAccounts();
+    renderVsaxGroups();
   }
 }
 
@@ -1189,6 +1239,23 @@ function syncWasabiButtonsDisabledState() {
   }
 }
 
+function syncVsaxButtonsDisabledState() {
+  if (!ui.vsaxLoadBtn) {
+    return;
+  }
+
+  const configured = Boolean(state.config?.vsax?.configured);
+  const isBusy = state.vsaxSyncAllActive || state.vsaxSyncingGroupNames.size > 0 || state.exportCsvActive;
+  const selectedCount = selectedVsaxGroupNames().length || state.vsaxSelectedGroupNames.length;
+  ui.vsaxLoadBtn.disabled = !configured || isBusy || selectedCount === 0;
+  if (ui.vsaxRefreshGroupsBtn) {
+    ui.vsaxRefreshGroupsBtn.disabled = !configured || isBusy;
+  }
+  if (ui.saveVsaxGroupsBtn) {
+    ui.saveVsaxGroupsBtn.disabled = !configured || isBusy || !state.vsaxAvailableGroups.length;
+  }
+}
+
 function renderSubscriptions() {
   if (!state.subscriptions.length) {
     ui.subsList.innerHTML = '<p class="muted">No subscriptions loaded yet.</p>';
@@ -1216,6 +1283,51 @@ function renderSubscriptions() {
   syncPullButtonsDisabledState();
   renderAzureScopeTabs();
   renderScopeTotals();
+}
+
+function renderVsaxGroupSelection() {
+  if (!ui.vsaxGroupList) {
+    return;
+  }
+
+  const configured = Boolean(state.config?.vsax?.configured);
+  const configError = state.config?.vsax?.configError || '';
+  const available = Array.isArray(state.vsaxAvailableGroups) ? state.vsaxAvailableGroups : [];
+  const selectedFromState = Array.isArray(state.vsaxSelectedGroupNames) ? state.vsaxSelectedGroupNames : [];
+  const selectedSet = new Set(selectedFromState.map((name) => String(name || '').trim()).filter(Boolean));
+
+  if (!configured) {
+    ui.vsaxGroupList.innerHTML = `<p class="muted">${escapeHtml(
+      configError || 'Configure VSAX_BASE_URL, VSAX_API_TOKEN_ID, and VSAX_API_TOKEN_SECRET to load VSAx groups.'
+    )}</p>`;
+    syncVsaxButtonsDisabledState();
+    return;
+  }
+
+  if (!available.length) {
+    ui.vsaxGroupList.innerHTML = '<p class="muted">No VSAx groups found yet. Click "Load groups".</p>';
+    syncVsaxButtonsDisabledState();
+    return;
+  }
+
+  ui.vsaxGroupList.innerHTML = '';
+  for (const group of available) {
+    const groupName = String(group?.group_name || '').trim();
+    if (!groupName) {
+      continue;
+    }
+    const checked = selectedSet.size
+      ? selectedSet.has(groupName)
+      : Number(group?.is_selected) === 1;
+    const label = document.createElement('label');
+    label.innerHTML = `
+      <input type="checkbox" value="${escapeHtml(groupName)}" ${checked ? 'checked' : ''} />
+      <span>${escapeHtml(groupName)}</span>
+    `;
+    ui.vsaxGroupList.appendChild(label);
+  }
+
+  syncVsaxButtonsDisabledState();
 }
 
 function renderAzureContentViews() {
@@ -1360,6 +1472,21 @@ function getWasabiPricingAssumptions() {
   };
 }
 
+function getVsaxPricingAssumptions() {
+  const fromConfig = state.config?.vsax?.pricingAssumptions || {};
+  return {
+    currency: String(fromConfig.currency || DEFAULT_VSAX_PRICING_ASSUMPTIONS.currency),
+    source: String(fromConfig.source || DEFAULT_VSAX_PRICING_ASSUMPTIONS.source),
+    asOfDate: String(fromConfig.asOfDate || DEFAULT_VSAX_PRICING_ASSUMPTIONS.asOfDate),
+    bytesPerTb: Math.max(1, Math.round(toFiniteNumber(fromConfig.bytesPerTb, DEFAULT_VSAX_PRICING_ASSUMPTIONS.bytesPerTb))),
+    daysInMonth: Math.max(1, toFiniteNumber(fromConfig.daysInMonth, DEFAULT_VSAX_PRICING_ASSUMPTIONS.daysInMonth)),
+    storagePricePerTbMonth: Math.max(
+      0,
+      toFiniteNumber(fromConfig.storagePricePerTbMonth, DEFAULT_VSAX_PRICING_ASSUMPTIONS.storagePricePerTbMonth)
+    )
+  };
+}
+
 function getAwsPricingAssumptions() {
   const fromConfig = state.config?.aws?.pricingAssumptions || {};
   return {
@@ -1397,6 +1524,18 @@ function estimateWasabiStorageCost(usageBytes, pricing) {
   return {
     rawTb: tb,
     billableTb,
+    estimated24h,
+    estimated30d
+  };
+}
+
+function estimateVsaxStorageCost(usageBytes, pricing) {
+  const bytes = Math.max(0, toFiniteNumber(usageBytes, 0));
+  const tb = bytes / Math.max(1, pricing.bytesPerTb);
+  const estimated30d = tb * pricing.storagePricePerTbMonth;
+  const estimated24h = estimated30d / Math.max(1, pricing.daysInMonth);
+  return {
+    rawTb: tb,
     estimated24h,
     estimated30d
   };
@@ -1477,6 +1616,42 @@ function computeWasabiProviderStats(accounts, pricing = getWasabiPricingAssumpti
       estimated24h: 0,
       estimated30d: 0,
       bucketCount: 0
+    }
+  );
+
+  return {
+    ...summary,
+    pricing
+  };
+}
+
+function computeVsaxProviderStats(groups, pricing = getVsaxPricingAssumptions()) {
+  const list = Array.isArray(groups) ? groups : [];
+  const summary = list.reduce(
+    (acc, group) => {
+      const allocatedBytes = Math.max(0, Number(group.total_allocated_bytes || 0));
+      const usedBytes = Math.max(0, Number(group.total_used_bytes || 0));
+      const deviceCount = Math.max(0, Number(group.device_count || 0));
+      const diskCount = Math.max(0, Number(group.disk_count || 0));
+      const estimate = estimateVsaxStorageCost(usedBytes, pricing);
+
+      acc.groupCount += 1;
+      acc.deviceCount += deviceCount;
+      acc.diskCount += diskCount;
+      acc.allocatedBytes += allocatedBytes;
+      acc.usedBytes += usedBytes;
+      acc.estimated24h += estimate.estimated24h;
+      acc.estimated30d += estimate.estimated30d;
+      return acc;
+    },
+    {
+      groupCount: 0,
+      deviceCount: 0,
+      diskCount: 0,
+      allocatedBytes: 0,
+      usedBytes: 0,
+      estimated24h: 0,
+      estimated30d: 0
     }
   );
 
@@ -1690,6 +1865,7 @@ function renderUnifiedStats() {
   const azureStats = computeAzureScopeStats(getScopedAccounts(), getPricingAssumptions());
   const awsStats = computeAwsProviderStats(state.awsAccounts, getAwsPricingAssumptions());
   const wasabiStats = computeWasabiProviderStats(state.wasabiAccounts, getWasabiPricingAssumptions());
+  const vsaxStats = computeVsaxProviderStats(state.vsaxGroups, getVsaxPricingAssumptions());
 
   const rows = [
     {
@@ -1727,6 +1903,24 @@ function renderUnifiedStats() {
         wasabiStats.accountCount > 0
           ? `${wasabiStats.bucketCount.toLocaleString()} cached bucket(s). Ingress/egress/transaction metrics are not exposed by current Wasabi utilization API integration.`
           : 'No Wasabi accounts configured or loaded.'
+    },
+    {
+      provider: 'VSAx',
+      accountCount: vsaxStats.groupCount,
+      storageInUseBytes: vsaxStats.usedBytes,
+      egress24hBytes: null,
+      egress30dBytes: null,
+      ingress24hBytes: null,
+      ingress30dBytes: null,
+      transactions24h: null,
+      transactions30d: null,
+      estimatedCost24h: vsaxStats.estimated24h,
+      estimatedCost30d: vsaxStats.estimated30d,
+      currency: vsaxStats.pricing.currency,
+      notes:
+        vsaxStats.groupCount > 0
+          ? `${vsaxStats.deviceCount.toLocaleString()} device(s), ${vsaxStats.diskCount.toLocaleString()} disk row(s) in cache. Disk usage cost estimate only (${formatCurrency(vsaxStats.pricing.storagePricePerTbMonth, vsaxStats.pricing.currency)}/TB-month).`
+          : 'No VSAx groups loaded.'
     },
     {
       provider: 'AWS',
@@ -1816,11 +2010,11 @@ function renderUnifiedStats() {
   ui.unifiedStatsBody.innerHTML = [...rows, totalRow].map((row) => renderUnifiedStatRow(row)).join('');
 
   if (ui.unifiedStatsCoverage) {
-    ui.unifiedStatsCoverage.textContent = `Azure scoped accounts: ${azureStats.accountCount}. AWS accounts: ${awsStats.accountCount}. Wasabi accounts: ${wasabiStats.accountCount}. Other providers pending integration.`;
+    ui.unifiedStatsCoverage.textContent = `Azure scoped accounts: ${azureStats.accountCount}. AWS accounts: ${awsStats.accountCount}. Wasabi accounts: ${wasabiStats.accountCount}. VSAx groups: ${vsaxStats.groupCount}. Other providers pending integration.`;
   }
 
   if (ui.unifiedPricingAssumptions) {
-    ui.unifiedPricingAssumptions.textContent = `Pricing references: Azure (${azureStats.pricing.regionLabel}) from ${azureStats.pricing.source} as of ${azureStats.pricing.asOfDate}; AWS (${awsStats.pricing.regionLabel}) from ${awsStats.pricing.source} as of ${awsStats.pricing.asOfDate}; Wasabi from ${wasabiStats.pricing.source} as of ${wasabiStats.pricing.asOfDate}.`;
+    ui.unifiedPricingAssumptions.textContent = `Pricing references: Azure (${azureStats.pricing.regionLabel}) from ${azureStats.pricing.source} as of ${azureStats.pricing.asOfDate}; AWS (${awsStats.pricing.regionLabel}) from ${awsStats.pricing.source} as of ${awsStats.pricing.asOfDate}; Wasabi from ${wasabiStats.pricing.source} as of ${wasabiStats.pricing.asOfDate}; VSAx from ${vsaxStats.pricing.source} as of ${vsaxStats.pricing.asOfDate}.`;
   }
 }
 
@@ -3376,6 +3570,433 @@ function renderWasabiAccounts() {
   }
 }
 
+function pruneVsaxGroupScopedState() {
+  const liveNames = new Set(state.vsaxGroups.map((group) => String(group.group_name || '').trim()));
+
+  for (const groupName of Object.keys(state.vsaxDisksByGroup)) {
+    if (!liveNames.has(groupName)) {
+      delete state.vsaxDisksByGroup[groupName];
+    }
+  }
+  for (const groupName of Object.keys(state.vsaxDiskLoadErrorsByGroup)) {
+    if (!liveNames.has(groupName)) {
+      delete state.vsaxDiskLoadErrorsByGroup[groupName];
+    }
+  }
+  for (const groupName of Object.keys(state.vsaxLoadingDisksByGroup)) {
+    if (!liveNames.has(groupName)) {
+      delete state.vsaxLoadingDisksByGroup[groupName];
+    }
+  }
+  for (const groupName of Array.from(state.expandedVsaxGroupNames)) {
+    if (!liveNames.has(groupName)) {
+      state.expandedVsaxGroupNames.delete(groupName);
+    }
+  }
+  for (const groupName of Array.from(state.vsaxSyncingGroupNames)) {
+    if (!liveNames.has(groupName)) {
+      state.vsaxSyncingGroupNames.delete(groupName);
+    }
+  }
+}
+
+function renderVsaxDiskDetailMarkup(groupName) {
+  const isLoading = Boolean(state.vsaxLoadingDisksByGroup[groupName]);
+  const loadError = state.vsaxDiskLoadErrorsByGroup[groupName];
+  const disks = state.vsaxDisksByGroup[groupName];
+
+  if (isLoading) {
+    return '<div class="detail-wrap detail-muted">Loading VSAx disk rows from cache...</div>';
+  }
+  if (loadError) {
+    return `<div class="detail-wrap detail-error">Failed to load VSAx disk rows: ${escapeHtml(loadError)}</div>`;
+  }
+  if (!Array.isArray(disks) || !disks.length) {
+    return '<div class="detail-wrap detail-muted">No disk rows cached for this group.</div>';
+  }
+
+  const rows = disks
+    .map((disk) => {
+      const totalBytes = Number(disk.total_bytes || 0);
+      const usedBytes = Number(disk.used_bytes || 0);
+      const freeBytes = Number(disk.free_bytes || 0);
+      const freePercentage = Number(disk.free_percentage);
+      const usedPercent =
+        Number.isFinite(totalBytes) && totalBytes > 0
+          ? `${((Math.max(0, usedBytes) / totalBytes) * 100).toFixed(1)}%`
+          : Number.isFinite(freePercentage)
+            ? `${(100 - freePercentage).toFixed(1)}%`
+            : '-';
+
+      return `
+        <tr>
+          <td>${escapeHtml(disk.device_name || disk.device_id || '-')}</td>
+          <td>${escapeHtml(disk.disk_name || '-')}</td>
+          <td>${escapeHtml(formatBytesOrDash(totalBytes))}</td>
+          <td>${escapeHtml(formatBytesOrDash(usedBytes))}</td>
+          <td>${escapeHtml(formatBytesOrDash(freeBytes))}</td>
+          <td>${escapeHtml(usedPercent)}</td>
+          <td>${escapeHtml(disk.is_system === null || disk.is_system === undefined ? '-' : Number(disk.is_system) === 1 ? 'Yes' : 'No')}</td>
+          <td>${escapeHtml(toLocalDate(disk.last_sync_at))}</td>
+          <td class="${disk.last_error ? 'error' : ''}">${escapeHtml(disk.last_error || '-')}</td>
+        </tr>
+      `;
+    })
+    .join('');
+
+  return `
+    <div class="detail-wrap">
+      <div class="inline-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Device</th>
+              <th>Disk</th>
+              <th>Allocated</th>
+              <th>Used</th>
+              <th>Free</th>
+              <th>Used %</th>
+              <th>System</th>
+              <th>Last sync</th>
+              <th>Error</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderVsaxTotals() {
+  if (
+    !ui.vsaxTotalAllocated ||
+    !ui.vsaxTotalUsed ||
+    !ui.vsaxEstimatedCost24h ||
+    !ui.vsaxEstimatedCost30d ||
+    !ui.vsaxTotalsCoverage ||
+    !ui.vsaxPricingAssumptions
+  ) {
+    return;
+  }
+
+  const totals = computeVsaxProviderStats(state.vsaxGroups, getVsaxPricingAssumptions());
+  const pricing = totals.pricing;
+  const availableCount = state.vsaxAvailableGroups.length;
+  const selectedCount = state.vsaxSelectedGroupNames.length;
+
+  ui.vsaxTotalAllocated.textContent = formatBytes(totals.allocatedBytes);
+  ui.vsaxTotalUsed.textContent = formatBytes(totals.usedBytes);
+  ui.vsaxEstimatedCost24h.textContent = formatCurrency(totals.estimated24h, pricing.currency);
+  ui.vsaxEstimatedCost30d.textContent = formatCurrency(totals.estimated30d, pricing.currency);
+  ui.vsaxTotalsCoverage.textContent = `${selectedCount}/${availableCount} selected group(s), ${totals.deviceCount.toLocaleString()} device(s), ${totals.diskCount.toLocaleString()} disk row(s) in cache.`;
+  ui.vsaxPricingAssumptions.textContent = `Estimate assumptions: ${formatCurrency(
+    pricing.storagePricePerTbMonth,
+    pricing.currency
+  )}/TB-month from ${pricing.source} as of ${pricing.asOfDate}; ${pricing.daysInMonth}-day month.`;
+
+  renderUnifiedStats();
+}
+
+function renderVsaxGroups() {
+  if (!ui.vsaxGroupsBody) {
+    return;
+  }
+
+  const configured = Boolean(state.config?.vsax?.configured);
+  const configError = state.config?.vsax?.configError || '';
+  if (ui.vsaxConfigInfo) {
+    if (configError) {
+      ui.vsaxConfigInfo.textContent = `Config error: ${configError}`;
+    } else if (configured) {
+      const availableCount = state.vsaxAvailableGroups.length;
+      const selectedCount = state.vsaxSelectedGroupNames.length;
+      const mode = state.config?.vsax?.config?.groupFilterDefined ? 'env filter' : 'auto-discovered';
+      ui.vsaxConfigInfo.textContent = `${selectedCount}/${availableCount} group(s) selected (${mode})`;
+    } else {
+      ui.vsaxConfigInfo.textContent = 'VSAx not configured';
+    }
+  }
+
+  renderVsaxGroupSelection();
+  syncVsaxButtonsDisabledState();
+  renderVsaxTotals();
+  ui.vsaxGroupsBody.innerHTML = '';
+
+  if (!configured) {
+    ui.vsaxGroupsBody.innerHTML = `<tr><td colspan=\"10\" class=\"muted\">${escapeHtml(
+      configError || 'Configure VSAX_BASE_URL, VSAX_API_TOKEN_ID, and VSAX_API_TOKEN_SECRET on the server to enable VSAx sync.'
+    )}</td></tr>`;
+    return;
+  }
+
+  const query = normalizeSearch(ui.vsaxSearchInput?.value || '');
+  const filteredGroups = query
+    ? state.vsaxGroups.filter((group) => {
+        return [
+          group.group_name,
+          group.device_names_csv,
+          formatWholeNumber(group.device_count),
+          formatWholeNumber(group.disk_count),
+          formatBytes(group.total_allocated_bytes),
+          formatBytes(group.total_used_bytes),
+          group.last_error
+        ].some((field) => containsSearch(field, query));
+      })
+    : state.vsaxGroups;
+
+  if (!filteredGroups.length) {
+    const noSelection = !query && state.vsaxSelectedGroupNames.length === 0;
+    ui.vsaxGroupsBody.innerHTML = `<tr><td colspan=\"10\" class=\"muted\">${
+      noSelection ? 'No VSAx groups selected. Pick groups above and save selection.' : 'No VSAx rows match this search.'
+    }</td></tr>`;
+    return;
+  }
+
+  for (const group of filteredGroups) {
+    const groupName = String(group.group_name || '').trim();
+    const isExpanded = state.expandedVsaxGroupNames.has(groupName);
+    const syncing = state.vsaxSyncingGroupNames.has(groupName);
+    const syncDisabled = state.vsaxSyncAllActive || syncing || state.exportCsvActive;
+    const allocatedBytes = Number(group.total_allocated_bytes || 0);
+    const usedBytes = Number(group.total_used_bytes || 0);
+    const usedPercent = allocatedBytes > 0 ? `${((Math.max(0, usedBytes) / allocatedBytes) * 100).toFixed(1)}%` : '-';
+
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td><button class=\"row-toggle\" data-action=\"toggle-vsax-disks\" data-group-name=\"${escapeHtml(groupName)}\" title=\"${
+      isExpanded ? 'Collapse disk details' : 'Expand disk details'
+    }\">${isExpanded ? '-' : '+'}</button></td>
+      <td>${escapeHtml(groupName || '-')}</td>
+      <td>${escapeHtml(formatWholeNumber(group.device_count))}</td>
+      <td>${escapeHtml(formatWholeNumber(group.disk_count))}</td>
+      <td>${escapeHtml(formatBytesOrDash(allocatedBytes))}</td>
+      <td>${escapeHtml(formatBytesOrDash(usedBytes))}</td>
+      <td>${escapeHtml(usedPercent)}</td>
+      <td>${escapeHtml(toLocalDate(group.last_sync_at || group.last_disk_sync_at))}</td>
+      <td class=\"${group.last_error ? 'error' : ''}\">${escapeHtml(group.last_error || '-')}</td>
+      <td>
+        <div class=\"actions\">
+          <button data-action=\"sync-vsax-group\" data-group-name=\"${escapeHtml(groupName)}\" ${syncDisabled ? 'disabled' : ''}>Sync now</button>
+        </div>
+      </td>
+    `;
+    ui.vsaxGroupsBody.appendChild(row);
+
+    if (isExpanded) {
+      const detailRow = document.createElement('tr');
+      detailRow.className = 'detail-row';
+      detailRow.innerHTML = `<td colspan=\"10\">${renderVsaxDiskDetailMarkup(groupName)}</td>`;
+      ui.vsaxGroupsBody.appendChild(detailRow);
+    }
+  }
+}
+
+async function refreshVsaxGroupsFromCache({ forceCatalogRefresh = false } = {}) {
+  const query = forceCatalogRefresh ? '?refreshCatalog=true' : '';
+  const payload = await api(`/api/vsax/groups${query}`);
+  const availableGroupsRaw = Array.isArray(payload.availableGroups) ? payload.availableGroups : [];
+  const availableGroups = availableGroupsRaw
+    .map((row) =>
+      typeof row === 'string'
+        ? {
+            group_name: row,
+            is_selected: 1
+          }
+        : row
+    )
+    .filter((row) => row && String(row.group_name || '').trim());
+  const selectedGroupNames = Array.isArray(payload.selectedGroupNames)
+    ? payload.selectedGroupNames.map((name) => String(name || '').trim()).filter(Boolean)
+    : availableGroups
+        .filter((row) => Number(row.is_selected) === 1)
+        .map((row) => String(row.group_name || '').trim())
+        .filter(Boolean);
+
+  if (state.config) {
+    state.config.vsax = {
+      configured: Boolean(payload.configured),
+      configError: payload.configError || null,
+      groupCount: availableGroups.length,
+      syncIntervalHours: payload.syncIntervalHours || state.config.vsax?.syncIntervalHours || 24,
+      cacheTtlHours: payload.cacheTtlHours || state.config.vsax?.cacheTtlHours || 24,
+      groups: payload.configuredGroups || state.config.vsax?.groups || [],
+      config: payload.config || state.config.vsax?.config || null,
+      pricingAssumptions: payload.pricingAssumptions || state.config.vsax?.pricingAssumptions || null
+    };
+  }
+  state.vsaxAvailableGroups = availableGroups;
+  state.vsaxSelectedGroupNames = selectedGroupNames;
+  state.vsaxGroups = payload.groups || [];
+  pruneVsaxGroupScopedState();
+  renderVsaxGroups();
+}
+
+async function saveVsaxGroupSelection() {
+  const groupNames = selectedVsaxGroupNames();
+  const payload = await api('/api/vsax/groups/select', {
+    method: 'POST',
+    body: {
+      groupNames
+    }
+  });
+
+  const availableGroupsRaw = Array.isArray(payload.availableGroups) ? payload.availableGroups : [];
+  state.vsaxAvailableGroups = availableGroupsRaw
+    .map((row) =>
+      typeof row === 'string'
+        ? {
+            group_name: row,
+            is_selected: 1
+          }
+        : row
+    )
+    .filter((row) => row && String(row.group_name || '').trim());
+  state.vsaxSelectedGroupNames = Array.isArray(payload.selectedGroupNames)
+    ? payload.selectedGroupNames.map((name) => String(name || '').trim()).filter(Boolean)
+    : groupNames;
+  state.vsaxGroups = Array.isArray(payload.groups) ? payload.groups : [];
+  pruneVsaxGroupScopedState();
+  renderVsaxGroups();
+  log(`Saved ${state.vsaxSelectedGroupNames.length} selected VSAx group(s).`);
+}
+
+async function loadVsaxDisksForGroup(groupName, force = false) {
+  const normalized = String(groupName || '').trim();
+  if (!normalized) {
+    return [];
+  }
+  if (!force && Array.isArray(state.vsaxDisksByGroup[normalized])) {
+    return state.vsaxDisksByGroup[normalized];
+  }
+  if (state.vsaxLoadingDisksByGroup[normalized]) {
+    return state.vsaxDisksByGroup[normalized] || [];
+  }
+
+  state.vsaxLoadingDisksByGroup[normalized] = true;
+  delete state.vsaxDiskLoadErrorsByGroup[normalized];
+  renderVsaxGroups();
+
+  try {
+    const payload = await api(`/api/vsax/disks?groupName=${encodeURIComponent(normalized)}`);
+    state.vsaxDisksByGroup[normalized] = payload.disks || [];
+    return state.vsaxDisksByGroup[normalized];
+  } catch (error) {
+    state.vsaxDiskLoadErrorsByGroup[normalized] = error.message || String(error);
+    throw error;
+  } finally {
+    state.vsaxLoadingDisksByGroup[normalized] = false;
+    renderVsaxGroups();
+  }
+}
+
+async function toggleVsaxDiskDetails(groupName) {
+  const normalized = String(groupName || '').trim();
+  if (!normalized) {
+    return;
+  }
+
+  if (state.expandedVsaxGroupNames.has(normalized)) {
+    state.expandedVsaxGroupNames.delete(normalized);
+    renderVsaxGroups();
+    return;
+  }
+
+  state.expandedVsaxGroupNames.add(normalized);
+  renderVsaxGroups();
+  try {
+    await loadVsaxDisksForGroup(normalized, false);
+  } catch (error) {
+    log(`Failed to load VSAx disk rows for ${normalized}: ${error.message}`, true);
+  }
+}
+
+async function syncVsaxGroupsUi(groupNames = [], force = true) {
+  const explicitNames = Array.isArray(groupNames)
+    ? groupNames.map((name) => String(name || '').trim()).filter(Boolean)
+    : [];
+  const selectedNamesFromUi = selectedVsaxGroupNames();
+  const selectedNames = selectedNamesFromUi.length
+    ? selectedNamesFromUi
+    : Array.isArray(state.vsaxSelectedGroupNames)
+      ? state.vsaxSelectedGroupNames
+      : [];
+  const names = explicitNames.length ? explicitNames : selectedNames;
+  if (!names.length) {
+    throw new Error('No VSAx group selected.');
+  }
+  const isSingle = names.length === 1;
+
+  if (isSingle) {
+    state.vsaxSyncingGroupNames.add(names[0]);
+  } else {
+    state.vsaxSyncAllActive = true;
+  }
+  renderVsaxGroups();
+
+  try {
+    const payload = await api('/api/vsax/sync', {
+      method: 'POST',
+      body: {
+        groupNames: names,
+        force
+      }
+    });
+
+    if (state.config) {
+      state.config.vsax = {
+        ...(state.config.vsax || {}),
+        configured: true,
+        configError: null,
+        groupCount: Array.isArray(payload.availableGroups)
+          ? payload.availableGroups.length
+          : state.config.vsax?.groupCount || 0,
+        pricingAssumptions: payload.pricingAssumptions || state.config.vsax?.pricingAssumptions || null
+      };
+    }
+
+    const availableGroupsRaw = Array.isArray(payload.availableGroups) ? payload.availableGroups : [];
+    state.vsaxAvailableGroups = availableGroupsRaw
+      .map((row) =>
+        typeof row === 'string'
+          ? {
+              group_name: row,
+              is_selected: 1
+            }
+          : row
+      )
+      .filter((row) => row && String(row.group_name || '').trim());
+    state.vsaxSelectedGroupNames = Array.isArray(payload.selectedGroups)
+      ? payload.selectedGroups.map((name) => String(name || '').trim()).filter(Boolean)
+      : names;
+    state.vsaxGroups = payload.groups || [];
+    pruneVsaxGroupScopedState();
+    if (isSingle) {
+      await loadVsaxDisksForGroup(names[0], true);
+    } else {
+      state.vsaxDisksByGroup = {};
+      state.vsaxDiskLoadErrorsByGroup = {};
+      state.vsaxLoadingDisksByGroup = {};
+      state.expandedVsaxGroupNames.clear();
+    }
+    renderVsaxGroups();
+
+    const summary = payload.summary || {};
+    log(
+      `VSAx sync finished: groups=${summary.groupCount || 0}, scanned=${summary.scannedGroups || 0}, skipped=${summary.skippedGroups || 0}, failed=${summary.failedGroups || 0}, devices=${summary.deviceCount || 0}, disks=${summary.diskCount || 0}.`,
+      Number(summary.failedGroups || 0) > 0
+    );
+    return payload;
+  } finally {
+    if (isSingle) {
+      state.vsaxSyncingGroupNames.delete(names[0]);
+    } else {
+      state.vsaxSyncAllActive = false;
+    }
+    renderVsaxGroups();
+  }
+}
+
 function renderList(values, emptyText = 'None') {
   if (!Array.isArray(values) || !values.length) {
     return `<div class="security-empty">${escapeHtml(emptyText)}</div>`;
@@ -3417,6 +4038,8 @@ async function initConnection() {
   renderAwsAccounts();
   syncWasabiButtonsDisabledState();
   renderWasabiAccounts();
+  syncVsaxButtonsDisabledState();
+  renderVsaxGroups();
 
   if (!config.configured) {
     const missing = Array.isArray(config.missing) ? config.missing.join(', ') : 'Missing environment settings.';
@@ -3472,6 +4095,24 @@ async function initConnection() {
     log(`Wasabi config error: ${config.wasabi.configError}`, true);
   } else {
     log('Wasabi not configured yet. Add WASABI account settings to enable that tab.');
+  }
+
+  if (config.vsax?.configured) {
+    const groups = Array.isArray(config.vsax.groups) ? config.vsax.groups : [];
+    const groupFilterDefined = Boolean(config.vsax?.config?.groupFilterDefined);
+    log(
+      `VSAx configured: ${groups.length} env-scoped group(s), refresh interval=${config.vsax.syncIntervalHours || 24}h, cacheTtl=${config.vsax.cacheTtlHours || 24}h, mode=${
+        groupFilterDefined ? 'env-filtered' : 'auto-discover'
+      }, groups=${groups.join(', ') || 'all groups from API'}.`
+    );
+    const vsaxPricing = getVsaxPricingAssumptions();
+    log(
+      `VSAx pricing: ${formatCurrency(vsaxPricing.storagePricePerTbMonth, vsaxPricing.currency)}/TB-month from ${vsaxPricing.source} (as of ${vsaxPricing.asOfDate}).`
+    );
+  } else if (config.vsax?.configError) {
+    log(`VSAx config error: ${config.vsax.configError}`, true);
+  } else {
+    log('VSAx not configured yet. Add VSAx settings to enable that tab.');
   }
 }
 
@@ -4624,6 +5265,43 @@ if (ui.wasabiExportAllBtn) {
   });
 }
 
+if (ui.vsaxLoadBtn) {
+  ui.vsaxLoadBtn.addEventListener('click', async () => {
+    try {
+      await syncVsaxGroupsUi([], true);
+    } catch (error) {
+      log(`VSAx sync failed: ${error.message}`, true);
+    }
+  });
+}
+
+if (ui.vsaxRefreshGroupsBtn) {
+  ui.vsaxRefreshGroupsBtn.addEventListener('click', async () => {
+    try {
+      await refreshVsaxGroupsFromCache({ forceCatalogRefresh: true });
+      log('Refreshed VSAx group catalog from API.');
+    } catch (error) {
+      log(`Failed to refresh VSAx groups: ${error.message}`, true);
+    }
+  });
+}
+
+if (ui.saveVsaxGroupsBtn) {
+  ui.saveVsaxGroupsBtn.addEventListener('click', async () => {
+    try {
+      await saveVsaxGroupSelection();
+    } catch (error) {
+      log(`Failed to save VSAx group selection: ${error.message}`, true);
+    }
+  });
+}
+
+if (ui.vsaxGroupList) {
+  ui.vsaxGroupList.addEventListener('change', () => {
+    syncVsaxButtonsDisabledState();
+  });
+}
+
 ui.accountSearchInput.addEventListener('input', () => {
   renderAccounts();
 });
@@ -4731,6 +5409,12 @@ if (ui.awsSecuritySearchInput) {
 if (ui.wasabiSearchInput) {
   ui.wasabiSearchInput.addEventListener('input', () => {
     renderWasabiAccounts();
+  });
+}
+
+if (ui.vsaxSearchInput) {
+  ui.vsaxSearchInput.addEventListener('input', () => {
+    renderVsaxGroups();
   });
 }
 
@@ -4965,6 +5649,32 @@ if (ui.awsSecurityAccountsBody) {
   });
 }
 
+if (ui.vsaxGroupsBody) {
+  ui.vsaxGroupsBody.addEventListener('click', async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLButtonElement)) {
+      return;
+    }
+
+    const groupName = target.getAttribute('data-group-name');
+    const action = target.getAttribute('data-action');
+    if (!groupName || !action) {
+      return;
+    }
+
+    try {
+      if (action === 'toggle-vsax-disks') {
+        await toggleVsaxDiskDetails(groupName);
+      }
+      if (action === 'sync-vsax-group') {
+        await syncVsaxGroupsUi([groupName], true);
+      }
+    } catch (error) {
+      log(`VSAx action failed for group ${groupName}: ${error.message}`, true);
+    }
+  });
+}
+
 (async function main() {
   try {
     loadThemeMode();
@@ -4993,6 +5703,7 @@ if (ui.awsSecurityAccountsBody) {
 
     await refreshAwsAccountsFromCache();
     await refreshWasabiAccountsFromCache();
+    await refreshVsaxGroupsFromCache();
 
     const latestJobPayload = await api('/api/jobs/pull-all/status');
     if (latestJobPayload.job) {

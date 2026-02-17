@@ -35,6 +35,13 @@ const {
   getAwsBuckets,
   replaceAwsEfsForAccount,
   getAwsEfs,
+  upsertVsaxGroups,
+  setSelectedVsaxGroups,
+  getSelectedVsaxGroupNames,
+  updateVsaxGroupSync,
+  replaceVsaxInventoryForGroup,
+  getVsaxGroups,
+  getVsaxDisks,
   upsertPricingSnapshot,
   getPricingSnapshot
 } = require('./db');
@@ -68,6 +75,7 @@ const {
   getBucketRegion,
   deepScanBucketObjects
 } = require('./aws');
+const { vsaxThrottle, parseVsaxConfigFromEnv, toPublicVsaxConfig, fetchVsaxInventory, fetchVsaxGroupCatalog } = require('./vsax');
 const { createTokenProvider } = require('./auth');
 const { configureProxyFromEnv } = require('./proxy');
 const { fetchAzureHotLrsPricingAssumptions, fetchWasabiPayGoPricingAssumptions } = require('./pricing');
@@ -102,6 +110,9 @@ const awsBucketSyncConcurrency = Math.max(1, Math.round(toFiniteNumber(process.e
 const awsDefaultDeepScan = parseBoolean(process.env.AWS_DEEP_SCAN_DEFAULT, false);
 const awsDefaultRequestMetrics = parseBoolean(process.env.AWS_REQUEST_METRICS_DEFAULT, false);
 const awsDefaultSecurityScan = parseBoolean(process.env.AWS_SECURITY_SCAN_DEFAULT, false);
+const vsaxSyncIntervalHours = Math.max(1, Math.round(toFiniteNumber(process.env.VSAX_SYNC_INTERVAL_HOURS, 24)));
+const vsaxCacheTtlHours = Math.max(1, toFiniteNumber(process.env.VSAX_CACHE_TTL_HOURS, 24));
+const vsaxGroupSyncConcurrency = Math.max(1, Math.round(toFiniteNumber(process.env.VSAX_GROUP_SYNC_CONCURRENCY, 1)));
 const wasabiPricingSyncIntervalHours = Math.max(
   1,
   Math.round(toFiniteNumber(process.env.WASABI_PRICING_SYNC_INTERVAL_HOURS, 24))
@@ -112,6 +123,7 @@ const wasabiPricingSourceUrl = String(process.env.WASABI_PRICING_SOURCE_URL || '
 const pullAllJobs = [];
 let azureMetricsSyncInFlight = false;
 let awsSyncInFlight = false;
+let vsaxSyncInFlight = false;
 const logger = createLogger('server');
 const requestLogger = logger.child('http');
 
@@ -170,6 +182,15 @@ const awsPricingAssumptions = {
   s3RequestUnitPrice: Math.max(0, toFiniteNumber(process.env.AWS_PRICING_S3_REQUEST_UNIT_PRICE, 0.0004)),
   s3RequestRateLabel: process.env.AWS_PRICING_S3_REQUEST_LABEL || 'All requests (blended estimate)',
   efsStandardGbMonth: Math.max(0, toFiniteNumber(process.env.AWS_PRICING_EFS_STANDARD_GB_MONTH, 0.3))
+};
+
+const vsaxPricingAssumptions = {
+  currency: process.env.VSAX_PRICING_CURRENCY || 'USD',
+  source: process.env.VSAX_PRICING_SOURCE_URL || 'https://www.kaseya.com/pricing/',
+  asOfDate: process.env.VSAX_PRICING_AS_OF_DATE || '2026-02-17',
+  bytesPerTb: Math.max(1, Math.round(toFiniteNumber(process.env.VSAX_PRICING_BYTES_PER_TB, 1099511627776))),
+  daysInMonth: Math.max(1, toFiniteNumber(process.env.VSAX_PRICING_DAYS_IN_MONTH, 30)),
+  storagePricePerTbMonth: Math.max(0, toFiniteNumber(process.env.VSAX_PRICING_STORAGE_TB_MONTH, 120))
 };
 
 function clonePricingAssumptions(assumptions) {
@@ -296,6 +317,12 @@ function parseSubscriptionIds(raw) {
 function parseAccountIds(raw) {
   return parseSubscriptionIds(raw)
     .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function parseGroupNames(raw) {
+  return parseSubscriptionIds(raw)
+    .map((value) => String(value || '').trim())
     .filter(Boolean);
 }
 
@@ -803,6 +830,400 @@ function startWasabiPricingSyncScheduler() {
       });
     }
   });
+}
+
+function getVsaxCacheTtlMs() {
+  return vsaxCacheTtlHours * 60 * 60 * 1000;
+}
+
+function getVsaxSyncIntervalMs() {
+  return vsaxSyncIntervalHours * 60 * 60 * 1000;
+}
+
+function resolveVsaxConfig() {
+  try {
+    const config = parseVsaxConfigFromEnv();
+    if (!config.configured) {
+      return {
+        config,
+        error: `Missing required VSAx environment values: ${config.missing.join(', ')}`,
+        groups: []
+      };
+    }
+
+    const envGroups = Array.isArray(config.groups) ? config.groups : [];
+    return {
+      config,
+      error: null,
+      groups: envGroups
+    };
+  } catch (error) {
+    return {
+      config: null,
+      error: error.message || String(error),
+      groups: []
+    };
+  }
+}
+
+function normalizeVsaxGroupRows(rows = []) {
+  return (Array.isArray(rows) ? rows : [])
+    .map((row) => ({
+      ...row,
+      group_name: String(row?.group_name || '').trim()
+    }))
+    .filter((row) => row.group_name);
+}
+
+function resolveVsaxSelectedGroups({ availableGroups = [], requestedGroups = [] } = {}) {
+  const availableSet = new Set(
+    (Array.isArray(availableGroups) ? availableGroups : [])
+      .map((name) => String(name || '').trim())
+      .filter(Boolean)
+  );
+
+  const selected = (Array.isArray(requestedGroups) ? requestedGroups : [])
+    .map((name) => String(name || '').trim())
+    .filter((name) => name && availableSet.has(name));
+
+  return Array.from(new Set(selected));
+}
+
+async function syncVsaxGroupCatalogFromEnv({ throwOnError = false, forceDiscover = false } = {}) {
+  const resolved = resolveVsaxConfig();
+  if (resolved.error) {
+    logger.warn('VSAx configuration parse failed', {
+      error: resolved.error,
+      throwOnError
+    });
+    if (throwOnError) {
+      const err = new Error(resolved.error);
+      err.statusCode = 500;
+      throw err;
+    }
+    return resolved;
+  }
+
+  const envGroups = Array.isArray(resolved.groups) ? resolved.groups : [];
+  const envFilterDefined = Boolean(resolved.config?.groupFilterDefined);
+  let availableGroups = [];
+  let catalogSource = 'sqlite-cache';
+  let discoveryMeta = {
+    pageCount: 0,
+    assetCount: 0
+  };
+
+  if (envFilterDefined) {
+    availableGroups = envGroups;
+    upsertVsaxGroups(availableGroups);
+    catalogSource = 'env-filter';
+  } else {
+    const cachedGroupRows = normalizeVsaxGroupRows(getVsaxGroups());
+    if (!forceDiscover && cachedGroupRows.length > 0) {
+      availableGroups = cachedGroupRows.map((row) => row.group_name);
+      catalogSource = 'sqlite-cache';
+    } else {
+      const discovered = await fetchVsaxGroupCatalog({
+        baseUrl: resolved.config.baseUrl,
+        tokenId: resolved.config.tokenId,
+        tokenSecret: resolved.config.tokenSecret,
+        pageSize: resolved.config.pageSize,
+        maxPages: resolved.config.maxPages,
+        assetFilter: resolved.config.assetFilter
+      });
+      availableGroups = Array.isArray(discovered.groups) ? discovered.groups : [];
+      discoveryMeta = {
+        pageCount: Number(discovered.pageCount || 0),
+        assetCount: Number(discovered.assetCount || 0)
+      };
+      upsertVsaxGroups(availableGroups);
+      catalogSource = 'vsax-api-discovery';
+    }
+  }
+
+  let selectedGroups = getSelectedVsaxGroupNames();
+  selectedGroups = resolveVsaxSelectedGroups({
+    availableGroups,
+    requestedGroups: selectedGroups
+  });
+
+  if (!selectedGroups.length && availableGroups.length) {
+    selectedGroups = [...availableGroups];
+    setSelectedVsaxGroups(selectedGroups);
+  }
+
+  const groupRows = normalizeVsaxGroupRows(getVsaxGroups());
+  return {
+    ...resolved,
+    groups: availableGroups,
+    selectedGroups,
+    groupRows,
+    catalogSource,
+    discovery: discoveryMeta
+  };
+}
+
+function shouldSyncVsaxGroup(cachedGroup, force) {
+  if (force) {
+    return true;
+  }
+  if (!cachedGroup || !cachedGroup.last_sync_at) {
+    return true;
+  }
+  const ageMs = Date.now() - parseTimeMs(cachedGroup.last_sync_at);
+  return ageMs > getVsaxCacheTtlMs();
+}
+
+function summarizeVsaxGroupSyncResult(result = {}) {
+  return {
+    groupName: result.groupName || '',
+    scanned: Boolean(result.scanned),
+    skipped: Boolean(result.skipped),
+    hadError: Boolean(result.hadError),
+    error: result.error || null,
+    deviceCount: Number(result.deviceCount || 0),
+    diskCount: Number(result.diskCount || 0),
+    totalAllocatedBytes: Number(result.totalAllocatedBytes || 0),
+    totalUsedBytes: Number(result.totalUsedBytes || 0),
+    pageCount: Number(result.pageCount || 0),
+    assetCount: Number(result.assetCount || 0)
+  };
+}
+
+async function syncSingleVsaxGroup({ config, groupName, force = false }) {
+  const normalizedGroupName = String(groupName || '').trim();
+  logger.debug('Starting VSAx group sync', {
+    groupName: normalizedGroupName,
+    force
+  });
+
+  const cachedGroup = getVsaxGroups([normalizedGroupName])[0] || null;
+  if (!shouldSyncVsaxGroup(cachedGroup, force)) {
+    logger.debug('Skipping VSAx group sync due to fresh cache', {
+      groupName: normalizedGroupName
+    });
+    return summarizeVsaxGroupSyncResult({
+      groupName: normalizedGroupName,
+      scanned: false,
+      skipped: true,
+      hadError: Boolean(cachedGroup?.last_error),
+      error: cachedGroup?.last_error || null,
+      deviceCount: Number(cachedGroup?.device_count || 0),
+      diskCount: Number(cachedGroup?.disk_count || 0),
+      totalAllocatedBytes: Number(cachedGroup?.total_allocated_bytes || 0),
+      totalUsedBytes: Number(cachedGroup?.total_used_bytes || 0)
+    });
+  }
+
+  try {
+    const inventory = await fetchVsaxInventory({
+      baseUrl: config.baseUrl,
+      tokenId: config.tokenId,
+      tokenSecret: config.tokenSecret,
+      include: config.include,
+      pageSize: config.pageSize,
+      maxPages: config.maxPages,
+      selectedGroups: [normalizedGroupName],
+      assetFilter: config.assetFilter
+    });
+
+    const filter = normalizedGroupName.toLowerCase();
+    const groupDevices = inventory.devices.filter((row) => String(row.groupName || '').toLowerCase() === filter);
+    const groupDisks = inventory.disks.filter((row) => String(row.groupName || '').toLowerCase() === filter);
+
+    if (groupDisks.length > 0) {
+      const sampleDisk = groupDisks[0];
+      logger.debug('VSAx disk sample after parse', {
+        groupName: normalizedGroupName,
+        deviceName: sampleDisk.deviceName,
+        diskName: sampleDisk.diskName,
+        totalBytes: sampleDisk.totalBytes,
+        usedBytes: sampleDisk.usedBytes,
+        freeBytes: sampleDisk.freeBytes,
+        freePercentage: sampleDisk.freePercentage
+      });
+    }
+
+    replaceVsaxInventoryForGroup(normalizedGroupName, {
+      devices: groupDevices,
+      disks: groupDisks
+    });
+
+    updateVsaxGroupSync({
+      groupName: normalizedGroupName,
+      error: null
+    });
+
+    const totalAllocatedBytes = groupDevices.reduce((sum, row) => sum + Number(row.diskTotalBytes || 0), 0);
+    const totalUsedBytes = groupDevices.reduce((sum, row) => sum + Number(row.diskUsedBytes || 0), 0);
+
+    logger.debug('VSAx group sync completed', {
+      groupName: normalizedGroupName,
+      deviceCount: groupDevices.length,
+      diskCount: groupDisks.length,
+      totalAllocatedBytes,
+      totalUsedBytes
+    });
+
+    return summarizeVsaxGroupSyncResult({
+      groupName: normalizedGroupName,
+      scanned: true,
+      skipped: false,
+      hadError: false,
+      deviceCount: groupDevices.length,
+      diskCount: groupDisks.length,
+      totalAllocatedBytes,
+      totalUsedBytes,
+      pageCount: inventory.pageCount,
+      assetCount: inventory.assetCount
+    });
+  } catch (error) {
+    const message = error?.message || String(error);
+    logger.warn('VSAx group sync failed', {
+      groupName: normalizedGroupName,
+      error: message
+    });
+
+    updateVsaxGroupSync({
+      groupName: normalizedGroupName,
+      error: message
+    });
+
+    const cachedAfterError = getVsaxGroups([normalizedGroupName])[0] || null;
+    return summarizeVsaxGroupSyncResult({
+      groupName: normalizedGroupName,
+      scanned: true,
+      skipped: false,
+      hadError: true,
+      error: message,
+      deviceCount: Number(cachedAfterError?.device_count || 0),
+      diskCount: Number(cachedAfterError?.disk_count || 0),
+      totalAllocatedBytes: Number(cachedAfterError?.total_allocated_bytes || 0),
+      totalUsedBytes: Number(cachedAfterError?.total_used_bytes || 0)
+    });
+  }
+}
+
+async function syncVsaxGroups({ groupNames = [], force = false }) {
+  const catalog = await syncVsaxGroupCatalogFromEnv({ throwOnError: true });
+  const availableGroups = Array.isArray(catalog.groups) ? catalog.groups : [];
+  const selectedGroups = Array.isArray(catalog.selectedGroups) ? catalog.selectedGroups : [];
+  const requestedGroups = new Set(parseGroupNames(groupNames));
+  const targetGroups = requestedGroups.size
+    ? availableGroups.filter((group) => requestedGroups.has(group))
+    : selectedGroups;
+
+  logger.info('VSAx sync requested', {
+    requestedGroups: Array.from(requestedGroups),
+    selectedGroupCount: selectedGroups.length,
+    availableGroupCount: availableGroups.length,
+    targetGroupCount: targetGroups.length,
+    force
+  });
+
+  const unknownGroups = requestedGroups.size
+    ? Array.from(requestedGroups).filter((groupName) => !availableGroups.includes(groupName))
+    : [];
+  if (unknownGroups.length) {
+    const err = new Error(`Unknown VSAx group(s): ${unknownGroups.join(', ')}`);
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const groupResults = await mapWithConcurrency(targetGroups, vsaxGroupSyncConcurrency, async (groupName) =>
+    syncSingleVsaxGroup({
+      config: catalog.config,
+      groupName,
+      force
+    })
+  );
+
+  const summary = {
+    groupCount: targetGroups.length,
+    scannedGroups: groupResults.filter((result) => result.scanned && !result.skipped).length,
+    skippedGroups: groupResults.filter((result) => result.skipped).length,
+    failedGroups: groupResults.filter((result) => result.hadError).length,
+    deviceCount: groupResults.reduce((sum, result) => sum + Number(result.deviceCount || 0), 0),
+    diskCount: groupResults.reduce((sum, result) => sum + Number(result.diskCount || 0), 0),
+    totalAllocatedBytes: groupResults.reduce((sum, result) => sum + Number(result.totalAllocatedBytes || 0), 0),
+    totalUsedBytes: groupResults.reduce((sum, result) => sum + Number(result.totalUsedBytes || 0), 0),
+    pageCount: groupResults.reduce((sum, result) => sum + Number(result.pageCount || 0), 0),
+    assetCount: groupResults.reduce((sum, result) => sum + Number(result.assetCount || 0), 0)
+  };
+
+  const allGroupRows = normalizeVsaxGroupRows(getVsaxGroups());
+  const persistedSelectedGroups = resolveVsaxSelectedGroups({
+    availableGroups: allGroupRows.map((row) => row.group_name),
+    requestedGroups: getSelectedVsaxGroupNames()
+  });
+  const selectedSet = new Set(persistedSelectedGroups);
+
+  return {
+    summary,
+    groupResults,
+    groups: allGroupRows.filter((row) => selectedSet.has(row.group_name)),
+    selectedGroups: persistedSelectedGroups,
+    availableGroups: allGroupRows,
+    availableGroupNames: allGroupRows.map((row) => row.group_name)
+  };
+}
+
+function startVsaxSyncScheduler() {
+  logger.info('Starting VSAx inventory sync scheduler', {
+    intervalHours: vsaxSyncIntervalHours,
+    cacheTtlHours: vsaxCacheTtlHours,
+    groupWorkers: vsaxGroupSyncConcurrency
+  });
+
+  const runTick = async (initialRun) => {
+    if (vsaxSyncInFlight) {
+      logger.warn('VSAx sync tick skipped because previous run is still active', {
+        initialRun
+      });
+      return;
+    }
+
+    vsaxSyncInFlight = true;
+    try {
+      const result = await syncVsaxGroups({
+        force: false
+      });
+
+      if (result.summary.groupCount > 0) {
+        logger.info('VSAx sync complete', {
+          groupCount: result.summary.groupCount,
+          scannedGroups: result.summary.scannedGroups,
+          skippedGroups: result.summary.skippedGroups,
+          failedGroups: result.summary.failedGroups,
+          deviceCount: result.summary.deviceCount,
+          diskCount: result.summary.diskCount,
+          initialRun
+        });
+      } else {
+        logger.info('VSAx sync skipped', {
+          reason: 'no VSAx groups selected',
+          initialRun
+        });
+      }
+    } catch (error) {
+      logger.warn('VSAx sync failed', {
+        error: error.message || String(error),
+        initialRun
+      });
+    } finally {
+      vsaxSyncInFlight = false;
+    }
+  };
+
+  const timer = setInterval(() => {
+    void runTick(false);
+  }, getVsaxSyncIntervalMs());
+
+  if (typeof timer.unref === 'function') {
+    timer.unref();
+  }
+
+  void runTick(true);
 }
 
 function getWasabiCacheTtlMs() {
@@ -2581,6 +3002,12 @@ app.get('/api/config', (_req, res) => {
     : null;
   const wasabiConfig = resolveWasabiConfig();
   const awsConfig = resolveAwsConfig();
+  const vsaxConfig = resolveVsaxConfig();
+  const vsaxGroupRows = normalizeVsaxGroupRows(getVsaxGroups());
+  const vsaxSelectedGroups = resolveVsaxSelectedGroups({
+    availableGroups: vsaxGroupRows.map((row) => row.group_name),
+    requestedGroups: getSelectedVsaxGroupNames()
+  });
 
   return res.json({
     authMode: 'service_principal',
@@ -2620,6 +3047,19 @@ app.get('/api/config', (_req, res) => {
         ...awsPricingAssumptions
       }
     },
+    vsax: {
+      configured: Boolean(vsaxConfig.config?.configured) && !vsaxConfig.error,
+      configError: vsaxConfig.error,
+      groupCount: vsaxGroupRows.length,
+      selectedGroupCount: vsaxSelectedGroups.length,
+      syncIntervalHours: vsaxSyncIntervalHours,
+      cacheTtlHours: vsaxCacheTtlHours,
+      groups: Array.isArray(vsaxConfig.groups) ? vsaxConfig.groups : [],
+      config: toPublicVsaxConfig(vsaxConfig.config || {}),
+      pricingAssumptions: {
+        ...vsaxPricingAssumptions
+      }
+    },
     throttling: {
       accountSyncConcurrency: Math.max(1, accountSyncConcurrency),
       containerSyncConcurrency: Math.max(1, containerSyncConcurrency),
@@ -2632,7 +3072,11 @@ app.get('/api/config', (_req, res) => {
       awsApiMinIntervalMs: Math.max(0, awsThrottle.minIntervalMs),
       awsApiRetries: Math.max(1, awsThrottle.maxRetries),
       awsAccountSyncConcurrency: Math.max(1, awsAccountSyncConcurrency),
-      awsBucketSyncConcurrency: Math.max(1, awsBucketSyncConcurrency)
+      awsBucketSyncConcurrency: Math.max(1, awsBucketSyncConcurrency),
+      vsaxApiMaxConcurrency: Math.max(1, vsaxThrottle.maxConcurrent),
+      vsaxApiMinIntervalMs: Math.max(0, vsaxThrottle.minIntervalMs),
+      vsaxApiRetries: Math.max(1, vsaxThrottle.maxRetries),
+      vsaxGroupSyncConcurrency: Math.max(1, vsaxGroupSyncConcurrency)
     },
     logging: {
       enableDebug: loggingConfig.enableDebug,
@@ -3344,6 +3788,123 @@ app.post('/api/aws/sync', async (req, res, next) => {
   }
 });
 
+app.get('/api/vsax/groups', async (req, res, next) => {
+  try {
+    const forceDiscover = parseBoolean(req.query.refreshCatalog, false);
+    const catalog = await syncVsaxGroupCatalogFromEnv({ throwOnError: false, forceDiscover });
+    if (catalog.error) {
+      return res.json({
+        configured: false,
+        configError: catalog.error,
+        syncIntervalHours: vsaxSyncIntervalHours,
+        cacheTtlHours: vsaxCacheTtlHours,
+        groups: [],
+        availableGroups: [],
+        selectedGroupNames: [],
+        configuredGroups: [],
+        catalogSource: null,
+        pricingAssumptions: {
+          ...vsaxPricingAssumptions
+        },
+        config: toPublicVsaxConfig(catalog.config || {})
+      });
+    }
+
+    const allGroups = normalizeVsaxGroupRows(getVsaxGroups());
+    const availableGroups = allGroups.map((row) => row.group_name);
+    const selectedGroupNames = resolveVsaxSelectedGroups({
+      availableGroups,
+      requestedGroups: getSelectedVsaxGroupNames()
+    });
+    const selectedSet = new Set(selectedGroupNames);
+    const visibleGroups = allGroups.filter((row) => selectedSet.has(row.group_name));
+
+    return res.json({
+      configured: true,
+      configError: null,
+      syncIntervalHours: vsaxSyncIntervalHours,
+      cacheTtlHours: vsaxCacheTtlHours,
+      configuredGroups: Array.isArray(catalog.groups) ? catalog.groups : [],
+      availableGroups: allGroups,
+      selectedGroupNames,
+      catalogSource: catalog.catalogSource || null,
+      discovery: catalog.discovery || null,
+      config: toPublicVsaxConfig(catalog.config || {}),
+      pricingAssumptions: {
+        ...vsaxPricingAssumptions
+      },
+      groups: visibleGroups
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/vsax/groups/select', async (req, res, next) => {
+  try {
+    const catalog = await syncVsaxGroupCatalogFromEnv({ throwOnError: true, forceDiscover: false });
+    const availableGroups = Array.isArray(catalog.groups) ? catalog.groups : [];
+    const requestedGroups = parseGroupNames(req.body?.groupNames);
+
+    const unknownGroups = requestedGroups.filter((groupName) => !availableGroups.includes(groupName));
+    if (unknownGroups.length) {
+      return res.status(400).json({
+        error: `Unknown VSAx group(s): ${unknownGroups.join(', ')}`
+      });
+    }
+
+    setSelectedVsaxGroups(requestedGroups);
+    const selectedGroupNames = resolveVsaxSelectedGroups({
+      availableGroups,
+      requestedGroups: getSelectedVsaxGroupNames()
+    });
+    const allGroups = normalizeVsaxGroupRows(getVsaxGroups());
+    const selectedSet = new Set(selectedGroupNames);
+
+    res.json({
+      selectedGroupNames,
+      availableGroups: allGroups,
+      groups: allGroups.filter((row) => selectedSet.has(row.group_name))
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/vsax/disks', (req, res, next) => {
+  try {
+    const groupName = String(req.query.groupName || '').trim();
+    if (!groupName) {
+      return res.status(400).json({ error: 'groupName is required' });
+    }
+    return res.json({
+      groupName,
+      disks: getVsaxDisks(groupName)
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/vsax/sync', async (req, res, next) => {
+  try {
+    logger.info('VSAx sync endpoint requested');
+    const payload = await syncVsaxGroups({
+      groupNames: parseGroupNames(req.body?.groupNames),
+      force: Boolean(req.body?.force)
+    });
+
+    return res.json({
+      ...payload,
+      pricingAssumptions: {
+        ...vsaxPricingAssumptions
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post('/api/security/sync-account', async (req, res, next) => {
   try {
     ensureServicePrincipalConfigured();
@@ -3694,6 +4255,14 @@ app.listen(port, () => {
     defaultRequestMetrics: awsDefaultRequestMetrics,
     defaultSecurityScan: awsDefaultSecurityScan
   });
+  logger.info('VSAx sync configured', {
+    intervalHours: vsaxSyncIntervalHours,
+    cacheTtlHours: vsaxCacheTtlHours,
+    groupWorkers: vsaxGroupSyncConcurrency,
+    apiMaxConcurrency: vsaxThrottle.maxConcurrent,
+    apiMinIntervalMs: vsaxThrottle.minIntervalMs,
+    apiRetries: vsaxThrottle.maxRetries
+  });
   logger.info('Log settings', {
     enableDebug: loggingConfig.enableDebug,
     enableInfo: loggingConfig.enableInfo,
@@ -3708,4 +4277,5 @@ app.listen(port, () => {
   startWasabiPricingSyncScheduler();
   startWasabiSyncScheduler();
   startAwsSyncScheduler();
+  startVsaxSyncScheduler();
 });

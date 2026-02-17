@@ -18,6 +18,7 @@
               <button class="provider-tab" data-provider="aws" role="tab" aria-selected="false">AWS</button>
               <button class="provider-tab" data-provider="gcp" role="tab" aria-selected="false">GCP</button>
               <button class="provider-tab" data-provider="wasabi" role="tab" aria-selected="false">Wasabi</button>
+              <button class="provider-tab" data-provider="vsax" role="tab" aria-selected="false">VSAx</button>
               <button class="provider-tab" data-provider="other" role="tab" aria-selected="false">Other</button>
             </div>
             <div class="top-tools">
@@ -503,6 +504,80 @@
               </tr>
             </thead>
             <tbody id="wasabiAccountsBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="providerPanelVsax" class="card provider-panel">
+        <h2>VSAx</h2>
+        <div class="toolbar provider-load-row">
+          <button id="vsaxRefreshGroupsBtn" disabled>Load groups</button>
+          <button id="vsaxLoadBtn" disabled>Fetch VSAx data</button>
+          <span id="vsaxConfigInfo" class="pill small-pill service-pill">VSAx not configured</span>
+        </div>
+        <p class="muted">Uses server-side VSAx token credentials. If <code>VSAX_GROUPS</code> is empty, groups are auto-discovered from VSAx and you can pick which ones to display/sync.</p>
+        <div class="subscriptions-compact">
+          <h3 class="subscriptions-compact-title">VSAx groups</h3>
+          <div id="vsaxGroupList" class="checklist subscriptions-checklist"></div>
+          <div class="toolbar subscriptions-toolbar">
+            <button id="saveVsaxGroupsBtn" disabled>Save selection</button>
+          </div>
+        </div>
+        <div class="inline-table-wrap wasabi-totals-wrap">
+          <table class="wasabi-totals-table">
+            <thead>
+              <tr>
+                <th>Metric</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Total allocated</td>
+                <td id="vsaxTotalAllocated">0 B</td>
+              </tr>
+              <tr>
+                <td>Total used</td>
+                <td id="vsaxTotalUsed">0 B</td>
+              </tr>
+              <tr>
+                <td>Estimated cost (24h)</td>
+                <td id="vsaxEstimatedCost24h">$0.00</td>
+              </tr>
+              <tr>
+                <td>Estimated cost (30d)</td>
+                <td id="vsaxEstimatedCost30d">$0.00</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p id="vsaxTotalsCoverage" class="muted compact-text scope-totals-coverage">0 group(s) loaded.</p>
+        <p id="vsaxPricingAssumptions" class="muted compact-text scope-pricing-assumptions"></p>
+        <div class="search-row">
+          <input
+            id="vsaxSearchInput"
+            class="search-input"
+            type="search"
+            placeholder="Search group, device, disk, metric values, or error"
+          />
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th class="toggle-col"></th>
+                <th>Group</th>
+                <th>Devices</th>
+                <th>Disks</th>
+                <th>Allocated</th>
+                <th>Used</th>
+                <th>Used %</th>
+                <th>Last sync</th>
+                <th>Error</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="vsaxGroupsBody"></tbody>
           </table>
         </div>
       </section>

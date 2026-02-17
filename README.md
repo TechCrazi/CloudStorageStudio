@@ -15,11 +15,17 @@ CloudStorageStudio is a local web app that:
 - Caches data in SQLite so repeated UI loads do not always re-query Azure.
 - Supports AWS S3 multi-account inventory in a dedicated tab using server-side credentials.
 - Uses low-cost AWS mode by default (bucket list + CloudWatch storage/object metrics).
+- AWS UI now has split sub-views similar to Azure: `Storage + buckets` and `Security view`.
 - Supports optional AWS deep scan mode (ListObjectsV2 object walk) when full detail is needed.
 - Supports optional AWS S3 bucket security posture pulls (public access block, policy public status, encryption, versioning, lifecycle, logging, object lock, ownership controls).
 - Pulls AWS EFS file system inventory/size by configured account + region list.
 - Estimates AWS S3 + EFS costs for 24h and 30d windows using configurable pricing assumptions.
 - Supports Wasabi bucket inventory in the Wasabi tab using server-side account credentials.
+- Supports Kaseya VSAx disk inventory in a dedicated VSAx tab using server-side API credentials.
+- Supports VSAx group scoping via `VSAX_GROUPS` (optional). If unset, the app auto-discovers all groups from VSAx and lets you pick selected groups in the UI.
+- Pulls/caches VSAx disk allocation and usage at group/device/disk level.
+- Adds a VSAx group picker (Azure-style checklist) to save selected groups for display/sync scope.
+- Estimates VSAx storage cost for 24h and 30d using configurable pricing assumptions (default `$120/TB-month`).
 - Syncs Wasabi storage pricing from the public pricing page into SQLite cache on startup and schedule.
 - Exports cached Azure + AWS + Wasabi datasets to CSV from view-specific buttons.
 - Azure Storage + Containers view exports one combined CSV (`azure-storage-containers`) with storage-account rows expanded into container-level details.
@@ -27,7 +33,8 @@ CloudStorageStudio is a local web app that:
 - AWS top-level export downloads AWS accounts + buckets CSV files; per-account AWS export downloads only that account's bucket CSV.
 - Wasabi top-level export downloads Wasabi accounts + buckets CSV files; per-account Wasabi export downloads only that account's bucket CSV.
 - IP map panel exports one CSV (`ip-aliases`).
-- UI now separates providers into tabs (Unified, Azure, AWS, Wasabi active; GCP/Other placeholders for upcoming integrations).
+- UI now separates providers into tabs (Unified, Azure, AWS, Wasabi, VSAx active; GCP/Other placeholders for upcoming integrations).
+- Browser remembers the active provider tab and active Azure/AWS sub-view across refresh.
 
 ## Stack
 
@@ -132,6 +139,29 @@ Wasabi account configuration (multi-account, no `AWS_*` env vars):
   - `WASABI_PRICING_SOURCE_URL` (default `https://wasabi.com/pricing/faq`)
   - Fallbacks/overrides: `WASABI_PRICING_CURRENCY`, `WASABI_PRICING_AS_OF_DATE`, `WASABI_PRICING_BYTES_PER_TB`, `WASABI_PRICING_DAYS_IN_MONTH`, `WASABI_PRICING_STORAGE_TB_MONTH`, `WASABI_PRICING_MIN_BILLABLE_TB`
 
+VSAx configuration:
+
+- Required:
+  - `VSAX_BASE_URL` (example: `https://yourcompany.vsax.net`)
+  - `VSAX_API_TOKEN_ID`
+  - `VSAX_API_TOKEN_SECRET`
+- Group filter:
+  - `VSAX_GROUPS` (comma-separated or JSON array; optional. Leave empty to auto-discover all groups)
+  - Optional API-side filter passthrough: `VSAX_ASSET_FILTER` (OData `$filter` text)
+- Pull behavior:
+  - `VSAX_INCLUDE` (default `Disks`)
+  - `VSAX_DISK_VALUE_UNIT` (default `kb`; used to convert VSAx disk `TotalValue`/`FreeValue`/`UsedValue` into bytes)
+  - `VSAX_PAGE_SIZE` (default `100`)
+  - `VSAX_MAX_PAGES` (default `500`)
+- Sync/cache + throttling:
+  - `VSAX_SYNC_INTERVAL_HOURS` (default `24`)
+  - `VSAX_CACHE_TTL_HOURS` (default `24`)
+  - `VSAX_GROUP_SYNC_CONCURRENCY` (default `1`)
+  - `VSAX_API_MAX_CONCURRENCY`, `VSAX_API_MIN_INTERVAL_MS`, `VSAX_API_MAX_RETRIES`
+- VSAx pricing assumptions:
+  - `VSAX_PRICING_CURRENCY`, `VSAX_PRICING_SOURCE_URL`, `VSAX_PRICING_AS_OF_DATE`
+  - `VSAX_PRICING_BYTES_PER_TB`, `VSAX_PRICING_DAYS_IN_MONTH`, `VSAX_PRICING_STORAGE_TB_MONTH` (default `120`)
+
 ## Run
 
 ```bash
@@ -143,6 +173,12 @@ npm start
 
 Open `http://localhost:8787`.
 
+For auto-reload during development:
+
+```bash
+npm run dev
+```
+
 ## How cache works
 
 - Subscriptions, storage accounts, containers, last known sizes, security profiles, and Wasabi inventory are stored in SQLite.
@@ -153,7 +189,9 @@ Open `http://localhost:8787`.
 - `AWS_CACHE_TTL_HOURS` controls when AWS account/bucket metrics are refreshed in cache.
 - `AWS_SYNC_INTERVAL_HOURS` controls the background AWS sync scheduler (startup + recurring interval).
 - `WASABI_CACHE_TTL_HOURS` controls when Wasabi bucket usage is refreshed.
+- `VSAX_CACHE_TTL_HOURS` controls when cached VSAx group disk inventory is refreshed.
 - Wasabi tab displays total storage/object counts and estimated storage cost for 24h and 30d based on synced public pricing.
+- VSAx tab displays total allocated/used storage and estimated storage-only cost for 24h and 30d.
 - AWS tab defaults to low-cost sync (bucket list + CloudWatch storage/object metrics); deep scan is on-demand.
 - Pull operations skip recently scanned containers unless forced.
 
@@ -167,6 +205,7 @@ Open `http://localhost:8787`.
 - AWS deep scan uses `ListObjectsV2` across bucket contents and can incur additional API request charges.
 - AWS ingress/egress/transaction metrics depend on CloudWatch S3 request metrics availability and may be blank (`-`) when not enabled.
 - AWS estimates are approximations based on configured/public pricing assumptions, not a billing-system replacement.
+- VSAx cost estimates are storage-only approximations from configured pricing assumptions.
 - Scope total cost estimates are approximations based on synced public retail rates (or env fallback) and not an official Azure bill calculation.
 - Activity logs are shown in a floating right-side drawer.
 - Storage account table shows per-account progress state while pull operations are running.

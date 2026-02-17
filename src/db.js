@@ -197,6 +197,54 @@ CREATE TABLE IF NOT EXISTS aws_efs_file_systems (
   FOREIGN KEY(account_id) REFERENCES aws_accounts(account_id)
 );
 
+CREATE TABLE IF NOT EXISTS vsax_groups (
+  group_name TEXT PRIMARY KEY,
+  is_selected INTEGER NOT NULL DEFAULT 1,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  last_seen_at TEXT NOT NULL,
+  last_sync_at TEXT,
+  last_error TEXT
+);
+
+CREATE TABLE IF NOT EXISTS vsax_devices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  group_name TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  device_name TEXT,
+  cpu_usage REAL,
+  memory_usage REAL,
+  memory_total INTEGER,
+  disk_total_bytes INTEGER,
+  disk_used_bytes INTEGER,
+  disk_free_bytes INTEGER,
+  disk_count INTEGER,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  last_seen_at TEXT NOT NULL,
+  last_sync_at TEXT,
+  last_error TEXT,
+  UNIQUE(group_name, device_id),
+  FOREIGN KEY(group_name) REFERENCES vsax_groups(group_name)
+);
+
+CREATE TABLE IF NOT EXISTS vsax_disks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  group_name TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  device_name TEXT,
+  disk_name TEXT NOT NULL,
+  is_system INTEGER,
+  total_bytes INTEGER,
+  used_bytes INTEGER,
+  free_bytes INTEGER,
+  free_percentage REAL,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  last_seen_at TEXT NOT NULL,
+  last_sync_at TEXT,
+  last_error TEXT,
+  UNIQUE(group_name, device_id, disk_name),
+  FOREIGN KEY(group_name) REFERENCES vsax_groups(group_name)
+);
+
 CREATE INDEX IF NOT EXISTS idx_accounts_sub ON storage_accounts(subscription_id);
 CREATE INDEX IF NOT EXISTS idx_containers_acc ON containers(account_id);
 CREATE INDEX IF NOT EXISTS idx_ip_aliases_name ON ip_aliases(server_name);
@@ -206,6 +254,9 @@ CREATE INDEX IF NOT EXISTS idx_wasabi_accounts_seen ON wasabi_accounts(last_seen
 CREATE INDEX IF NOT EXISTS idx_aws_buckets_acc ON aws_buckets(account_id);
 CREATE INDEX IF NOT EXISTS idx_aws_accounts_seen ON aws_accounts(last_seen_at);
 CREATE INDEX IF NOT EXISTS idx_aws_efs_acc ON aws_efs_file_systems(account_id);
+CREATE INDEX IF NOT EXISTS idx_vsax_devices_group ON vsax_devices(group_name);
+CREATE INDEX IF NOT EXISTS idx_vsax_disks_group ON vsax_disks(group_name);
+CREATE INDEX IF NOT EXISTS idx_vsax_disks_device ON vsax_disks(device_id);
 `);
 
 function ensureColumn(tableName, columnName, definition) {
@@ -275,6 +326,8 @@ ensureColumn('aws_efs_file_systems', 'size_bytes', 'INTEGER');
 ensureColumn('aws_efs_file_systems', 'creation_time', 'TEXT');
 ensureColumn('aws_efs_file_systems', 'last_sync_at', 'TEXT');
 ensureColumn('aws_efs_file_systems', 'last_error', 'TEXT');
+ensureColumn('vsax_groups', 'is_selected', 'INTEGER NOT NULL DEFAULT 1');
+db.exec('CREATE INDEX IF NOT EXISTS idx_vsax_groups_selected ON vsax_groups(is_active, is_selected)');
 
 const upsertSubscriptionStmt = db.prepare(`
 INSERT INTO subscriptions (subscription_id, display_name, tenant_id, state, is_selected, is_active, last_seen_at)
@@ -693,6 +746,141 @@ ON CONFLICT(account_id, file_system_id) DO UPDATE SET
 
 const markSubscriptionsInactiveStmt = db.prepare(`
 UPDATE subscriptions SET is_active=0 WHERE subscription_id IN (SELECT subscription_id FROM subscriptions)
+`);
+
+const markVsaxGroupsInactiveStmt = db.prepare(`
+UPDATE vsax_groups SET is_active=0 WHERE group_name IN (SELECT group_name FROM vsax_groups)
+`);
+
+const clearVsaxGroupSelectionStmt = db.prepare(`
+UPDATE vsax_groups SET is_selected=0 WHERE is_active=1
+`);
+
+const setVsaxGroupSelectedStmt = db.prepare(`
+UPDATE vsax_groups SET is_selected=1 WHERE group_name=?
+`);
+
+const upsertVsaxGroupStmt = db.prepare(`
+INSERT INTO vsax_groups (
+  group_name,
+  is_active,
+  last_seen_at
+)
+VALUES (
+  @group_name,
+  1,
+  @last_seen_at
+)
+ON CONFLICT(group_name) DO UPDATE SET
+  is_active=1,
+  last_seen_at=excluded.last_seen_at
+`);
+
+const updateVsaxGroupSyncStmt = db.prepare(`
+UPDATE vsax_groups
+SET last_sync_at=@last_sync_at,
+    last_error=@last_error
+WHERE group_name=@group_name
+`);
+
+const markVsaxDevicesInactiveByGroupStmt = db.prepare(`
+UPDATE vsax_devices SET is_active=0 WHERE group_name=@group_name
+`);
+
+const markVsaxDisksInactiveByGroupStmt = db.prepare(`
+UPDATE vsax_disks SET is_active=0 WHERE group_name=@group_name
+`);
+
+const upsertVsaxDeviceStmt = db.prepare(`
+INSERT INTO vsax_devices (
+  group_name,
+  device_id,
+  device_name,
+  cpu_usage,
+  memory_usage,
+  memory_total,
+  disk_total_bytes,
+  disk_used_bytes,
+  disk_free_bytes,
+  disk_count,
+  is_active,
+  last_seen_at,
+  last_sync_at,
+  last_error
+)
+VALUES (
+  @group_name,
+  @device_id,
+  @device_name,
+  @cpu_usage,
+  @memory_usage,
+  @memory_total,
+  @disk_total_bytes,
+  @disk_used_bytes,
+  @disk_free_bytes,
+  @disk_count,
+  1,
+  @last_seen_at,
+  @last_sync_at,
+  @last_error
+)
+ON CONFLICT(group_name, device_id) DO UPDATE SET
+  device_name=excluded.device_name,
+  cpu_usage=excluded.cpu_usage,
+  memory_usage=excluded.memory_usage,
+  memory_total=excluded.memory_total,
+  disk_total_bytes=excluded.disk_total_bytes,
+  disk_used_bytes=excluded.disk_used_bytes,
+  disk_free_bytes=excluded.disk_free_bytes,
+  disk_count=excluded.disk_count,
+  is_active=1,
+  last_seen_at=excluded.last_seen_at,
+  last_sync_at=excluded.last_sync_at,
+  last_error=excluded.last_error
+`);
+
+const upsertVsaxDiskStmt = db.prepare(`
+INSERT INTO vsax_disks (
+  group_name,
+  device_id,
+  device_name,
+  disk_name,
+  is_system,
+  total_bytes,
+  used_bytes,
+  free_bytes,
+  free_percentage,
+  is_active,
+  last_seen_at,
+  last_sync_at,
+  last_error
+)
+VALUES (
+  @group_name,
+  @device_id,
+  @device_name,
+  @disk_name,
+  @is_system,
+  @total_bytes,
+  @used_bytes,
+  @free_bytes,
+  @free_percentage,
+  1,
+  @last_seen_at,
+  @last_sync_at,
+  @last_error
+)
+ON CONFLICT(group_name, device_id, disk_name) DO UPDATE SET
+  device_name=excluded.device_name,
+  is_system=excluded.is_system,
+  total_bytes=excluded.total_bytes,
+  used_bytes=excluded.used_bytes,
+  free_bytes=excluded.free_bytes,
+  free_percentage=excluded.free_percentage,
+  is_active=1,
+  last_seen_at=excluded.last_seen_at,
+  last_sync_at=excluded.last_sync_at,
+  last_error=excluded.last_error
 `);
 
 function nowIso() {
@@ -1570,6 +1758,224 @@ function getAwsEfs(accountId) {
     .all(String(accountId || '').trim().toLowerCase());
 }
 
+function toRealOrNull(value) {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function upsertVsaxGroups(groupNames = []) {
+  const seenAt = nowIso();
+  const names = Array.isArray(groupNames)
+    ? groupNames
+        .map((name) => String(name || '').trim())
+        .filter(Boolean)
+    : [];
+
+  const tx = db.transaction((rows, timestamp) => {
+    markVsaxGroupsInactiveStmt.run();
+    for (const groupName of rows) {
+      upsertVsaxGroupStmt.run({
+        group_name: groupName,
+        last_seen_at: timestamp
+      });
+    }
+  });
+
+  tx(Array.from(new Set(names)), seenAt);
+}
+
+function setSelectedVsaxGroups(groupNames = []) {
+  const names = Array.isArray(groupNames)
+    ? groupNames
+        .map((name) => String(name || '').trim())
+        .filter(Boolean)
+    : [];
+
+  const tx = db.transaction((rows) => {
+    clearVsaxGroupSelectionStmt.run();
+    for (const groupName of rows) {
+      setVsaxGroupSelectedStmt.run(groupName);
+    }
+  });
+
+  tx(Array.from(new Set(names)));
+}
+
+function getSelectedVsaxGroupNames() {
+  return db
+    .prepare(
+      `
+      SELECT group_name
+      FROM vsax_groups
+      WHERE is_active=1 AND is_selected=1
+      ORDER BY group_name COLLATE NOCASE
+    `
+    )
+    .all()
+    .map((row) => String(row.group_name || '').trim())
+    .filter(Boolean);
+}
+
+function updateVsaxGroupSync({ groupName, error }) {
+  updateVsaxGroupSyncStmt.run({
+    group_name: String(groupName || '').trim(),
+    last_sync_at: nowIso(),
+    last_error: error || null
+  });
+}
+
+function replaceVsaxInventoryForGroup(groupName, { devices = [], disks = [] } = {}) {
+  const normalizedGroupName = String(groupName || '').trim();
+  const seenAt = nowIso();
+  const syncedAt = seenAt;
+  const deviceRows = Array.isArray(devices) ? devices : [];
+  const diskRows = Array.isArray(disks) ? disks : [];
+
+  const tx = db.transaction((targetGroupName, targetDevices, targetDisks, lastSeenAt, lastSyncAt) => {
+    markVsaxDevicesInactiveByGroupStmt.run({ group_name: targetGroupName });
+    markVsaxDisksInactiveByGroupStmt.run({ group_name: targetGroupName });
+
+    for (const row of targetDevices) {
+      upsertVsaxDeviceStmt.run({
+        group_name: targetGroupName,
+        device_id: String(row?.deviceId || row?.device_id || '').trim(),
+        device_name: row?.deviceName || row?.device_name || null,
+        cpu_usage: toRealOrNull(row?.cpuUsage ?? row?.cpu_usage ?? null),
+        memory_usage: toRealOrNull(row?.memoryUsage ?? row?.memory_usage ?? null),
+        memory_total: toIntegerOrNull(row?.memoryTotal ?? row?.memory_total ?? null),
+        disk_total_bytes: toIntegerOrNull(row?.diskTotalBytes ?? row?.disk_total_bytes ?? null),
+        disk_used_bytes: toIntegerOrNull(row?.diskUsedBytes ?? row?.disk_used_bytes ?? null),
+        disk_free_bytes: toIntegerOrNull(row?.diskFreeBytes ?? row?.disk_free_bytes ?? null),
+        disk_count: toIntegerOrNull(row?.diskCount ?? row?.disk_count ?? null),
+        last_seen_at: lastSeenAt,
+        last_sync_at: row?.lastSyncAt || row?.last_sync_at || lastSyncAt,
+        last_error: row?.error || row?.last_error || null
+      });
+    }
+
+    for (const row of targetDisks) {
+      upsertVsaxDiskStmt.run({
+        group_name: targetGroupName,
+        device_id: String(row?.deviceId || row?.device_id || '').trim(),
+        device_name: row?.deviceName || row?.device_name || null,
+        disk_name: String(row?.diskName || row?.disk_name || '').trim(),
+        is_system:
+          row?.isSystem === null || row?.isSystem === undefined
+            ? null
+            : row?.isSystem
+              ? 1
+              : 0,
+        total_bytes: toIntegerOrNull(row?.totalBytes ?? row?.total_bytes ?? null),
+        used_bytes: toIntegerOrNull(row?.usedBytes ?? row?.used_bytes ?? null),
+        free_bytes: toIntegerOrNull(row?.freeBytes ?? row?.free_bytes ?? null),
+        free_percentage: toRealOrNull(row?.freePercentage ?? row?.free_percentage ?? null),
+        last_seen_at: lastSeenAt,
+        last_sync_at: row?.lastSyncAt || row?.last_sync_at || lastSyncAt,
+        last_error: row?.error || row?.last_error || null
+      });
+    }
+  });
+
+  tx(
+    normalizedGroupName,
+    deviceRows.filter((row) => Boolean(String(row?.deviceId || row?.device_id || '').trim())),
+    diskRows.filter((row) => {
+      const deviceId = String(row?.deviceId || row?.device_id || '').trim();
+      const diskName = String(row?.diskName || row?.disk_name || '').trim();
+      return Boolean(deviceId && diskName);
+    }),
+    seenAt,
+    syncedAt
+  );
+}
+
+function getVsaxGroups(groupNames = []) {
+  const names = Array.isArray(groupNames)
+    ? groupNames
+        .map((name) => String(name || '').trim())
+        .filter(Boolean)
+    : [];
+  const hasFilter = names.length > 0;
+  const placeholders = names.map(() => '?').join(',');
+
+  const query = `
+SELECT
+  vg.group_name,
+  vg.is_selected,
+  vg.is_active,
+  vg.last_seen_at,
+  vg.last_sync_at,
+  vg.last_error,
+  IFNULL(vd_agg.device_count, 0) AS device_count,
+  IFNULL(vd_agg.disk_count, 0) AS device_reported_disk_count,
+  IFNULL(vd_agg.total_allocated_bytes, 0) AS total_allocated_bytes,
+  IFNULL(vd_agg.total_used_bytes, 0) AS total_used_bytes,
+  IFNULL(vd_agg.total_free_bytes, 0) AS total_free_bytes,
+  IFNULL(vd_agg.device_names_csv, '') AS device_names_csv,
+  IFNULL(vdisk_agg.disk_count, 0) AS disk_count,
+  IFNULL(vdisk_agg.last_disk_sync_at, NULL) AS last_disk_sync_at,
+  IFNULL(vdisk_agg.last_disk_error, NULL) AS last_disk_error
+FROM vsax_groups vg
+LEFT JOIN (
+  SELECT
+    group_name,
+    IFNULL(SUM(CASE WHEN is_active=1 THEN 1 ELSE 0 END), 0) AS device_count,
+    IFNULL(SUM(CASE WHEN is_active=1 THEN IFNULL(disk_count, 0) ELSE 0 END), 0) AS disk_count,
+    IFNULL(SUM(CASE WHEN is_active=1 THEN IFNULL(disk_total_bytes, 0) ELSE 0 END), 0) AS total_allocated_bytes,
+    IFNULL(SUM(CASE WHEN is_active=1 THEN IFNULL(disk_used_bytes, 0) ELSE 0 END), 0) AS total_used_bytes,
+    IFNULL(SUM(CASE WHEN is_active=1 THEN IFNULL(disk_free_bytes, 0) ELSE 0 END), 0) AS total_free_bytes,
+    IFNULL(GROUP_CONCAT(CASE WHEN is_active=1 THEN device_name END, ' '), '') AS device_names_csv
+  FROM vsax_devices
+  GROUP BY group_name
+) vd_agg ON vd_agg.group_name = vg.group_name
+LEFT JOIN (
+  SELECT
+    group_name,
+    IFNULL(SUM(CASE WHEN is_active=1 THEN 1 ELSE 0 END), 0) AS disk_count,
+    MAX(CASE WHEN is_active=1 THEN last_sync_at ELSE NULL END) AS last_disk_sync_at,
+    MAX(CASE WHEN is_active=1 THEN last_error ELSE NULL END) AS last_disk_error
+  FROM vsax_disks
+  GROUP BY group_name
+) vdisk_agg ON vdisk_agg.group_name = vg.group_name
+WHERE vg.is_active=1 ${hasFilter ? `AND vg.group_name IN (${placeholders})` : ''}
+ORDER BY vg.group_name COLLATE NOCASE
+`;
+
+  return db.prepare(query).all(...(hasFilter ? names : [])).map((row) => ({
+    ...row,
+    last_error: row.last_error || row.last_disk_error || null
+  }));
+}
+
+function getVsaxDisks(groupName) {
+  return db
+    .prepare(
+      `
+      SELECT
+        group_name,
+        device_id,
+        device_name,
+        disk_name,
+        is_system,
+        total_bytes,
+        used_bytes,
+        free_bytes,
+        free_percentage,
+        is_active,
+        last_seen_at,
+        last_sync_at,
+        last_error
+      FROM vsax_disks
+      WHERE group_name=? AND is_active=1
+      ORDER BY COALESCE(device_name, device_id) COLLATE NOCASE, disk_name COLLATE NOCASE
+    `
+    )
+    .all(String(groupName || '').trim());
+}
+
 function upsertPricingSnapshot({
   provider,
   profile,
@@ -1658,6 +2064,13 @@ module.exports = {
   getAwsBuckets,
   replaceAwsEfsForAccount,
   getAwsEfs,
+  upsertVsaxGroups,
+  setSelectedVsaxGroups,
+  getSelectedVsaxGroupNames,
+  updateVsaxGroupSync,
+  replaceVsaxInventoryForGroup,
+  getVsaxGroups,
+  getVsaxDisks,
   upsertPricingSnapshot,
   getPricingSnapshot
 };
