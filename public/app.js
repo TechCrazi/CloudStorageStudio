@@ -125,6 +125,7 @@ const state = {
   themeMode: 'gray',
   ipAliasPanelOpen: false,
   activeProvider: 'azure',
+  expandedUnifiedProviderIds: new Set(),
   activeAzureScope: 'all-selected',
   activeAzureView: 'inventory',
   activeAwsView: 'inventory',
@@ -1144,6 +1145,17 @@ async function exportIpAliasCsv() {
   log('Exported CSV: IP aliases.');
 }
 
+async function exportVsaxGroupCsv(groupName) {
+  const normalized = String(groupName || '').trim();
+  if (!normalized) {
+    throw new Error('Missing VSAx group name.');
+  }
+
+  const scopeQuery = buildExportQuery({ groupName: normalized });
+  await downloadCsvFile(`/api/export/csv/vsax/disks${scopeQuery}`, `vsax-group-disks-${normalized}.csv`);
+  log(`Exported CSV: VSAx group disks (${normalized}).`);
+}
+
 function stopPullAllPolling() {
   if (state.pullAllPollTimer) {
     clearTimeout(state.pullAllPollTimer);
@@ -1838,10 +1850,156 @@ function formatMetricValue(value, formatter) {
   return formatter(value);
 }
 
+function buildUnifiedAzureBreakdownRows(pricing) {
+  const scopedSubscriptionIds = getAzureScopeSubscriptionIds().map((id) => String(id || '').trim()).filter(Boolean);
+  const subscriptionById = new Map(
+    (Array.isArray(state.subscriptions) ? state.subscriptions : [])
+      .filter((sub) => sub && sub.subscription_id)
+      .map((sub) => [String(sub.subscription_id), sub])
+  );
+  const scopedAccounts = getScopedAccounts();
+  const accountsBySubscription = new Map();
+  for (const account of scopedAccounts) {
+    const subscriptionId = String(account?.subscription_id || '').trim();
+    if (!subscriptionId) {
+      continue;
+    }
+    const bucket = accountsBySubscription.get(subscriptionId) || [];
+    bucket.push(account);
+    accountsBySubscription.set(subscriptionId, bucket);
+  }
+
+  const orderedSubscriptionIds = Array.from(new Set([...scopedSubscriptionIds, ...accountsBySubscription.keys()])).sort(
+    (leftId, rightId) => {
+      const leftLabel = subscriptionById.get(leftId)?.display_name || leftId;
+      const rightLabel = subscriptionById.get(rightId)?.display_name || rightId;
+      return compareInventorySortValues(leftLabel, rightLabel);
+    }
+  );
+
+  return orderedSubscriptionIds.map((subscriptionId) => {
+    const accounts = accountsBySubscription.get(subscriptionId) || [];
+    const stats = computeAzureScopeStats(accounts, pricing);
+    const subscription = subscriptionById.get(subscriptionId);
+    const label = subscription?.display_name || subscriptionId;
+    return {
+      provider: label,
+      accountCount: stats.accountCount,
+      storageInUseBytes: stats.usedCapacity.total,
+      egress24hBytes: stats.egress24h.total,
+      egress30dBytes: stats.egress30d.total,
+      ingress24hBytes: stats.ingress24h.total,
+      ingress30dBytes: stats.ingress30d.total,
+      transactions24h: stats.transactions24h.total,
+      transactions30d: stats.transactions30d.total,
+      estimatedCost24h: stats.costs.totalEstimatedCost24h,
+      estimatedCost30d: stats.costs.totalEstimatedCost30d,
+      currency: stats.pricing.currency,
+      notes: subscriptionId
+    };
+  });
+}
+
+function buildUnifiedWasabiBreakdownRows(pricing) {
+  const accounts = Array.isArray(state.wasabiAccounts) ? [...state.wasabiAccounts] : [];
+  accounts.sort((left, right) =>
+    compareInventorySortValues(left?.display_name || left?.account_id || '', right?.display_name || right?.account_id || '')
+  );
+
+  return accounts.map((account) => {
+    const usageBytes = Number.isFinite(Number(account?.total_usage_bytes)) ? Math.max(0, Number(account.total_usage_bytes)) : null;
+    const estimate = estimateWasabiStorageCost(usageBytes || 0, pricing);
+    return {
+      provider: account?.display_name || account?.account_id || '-',
+      accountCount: 1,
+      storageInUseBytes: usageBytes,
+      egress24hBytes: null,
+      egress30dBytes: null,
+      ingress24hBytes: null,
+      ingress30dBytes: null,
+      transactions24h: null,
+      transactions30d: null,
+      estimatedCost24h: estimate.estimated24h,
+      estimatedCost30d: estimate.estimated30d,
+      currency: pricing.currency,
+      notes: `${formatWholeNumber(Math.max(0, Number(account?.bucket_count || 0)))} bucket(s)`
+    };
+  });
+}
+
+function buildUnifiedVsaxBreakdownRows(pricing) {
+  const groups = Array.isArray(state.vsaxGroups) ? [...state.vsaxGroups] : [];
+  groups.sort((left, right) => compareInventorySortValues(left?.group_name || '', right?.group_name || ''));
+
+  return groups.map((group) => {
+    const allocatedBytes = Math.max(0, Number(group?.total_allocated_bytes || 0));
+    const usedBytes = Math.max(0, Number(group?.total_used_bytes || 0));
+    const estimate = estimateVsaxStorageCost(usedBytes, pricing);
+    return {
+      provider: group?.group_name || '-',
+      accountCount: 1,
+      storageInUseBytes: usedBytes,
+      egress24hBytes: null,
+      egress30dBytes: null,
+      ingress24hBytes: null,
+      ingress30dBytes: null,
+      transactions24h: null,
+      transactions30d: null,
+      estimatedCost24h: estimate.estimated24h,
+      estimatedCost30d: estimate.estimated30d,
+      currency: pricing.currency,
+      notes: `Allocated ${formatBytes(allocatedBytes)}, devices ${formatWholeNumber(Math.max(0, Number(group?.device_count || 0)))}`
+    };
+  });
+}
+
+function buildUnifiedAwsBreakdownRows(pricing) {
+  const accounts = Array.isArray(state.awsAccounts) ? [...state.awsAccounts] : [];
+  accounts.sort((left, right) =>
+    compareInventorySortValues(left?.display_name || left?.account_id || '', right?.display_name || right?.account_id || '')
+  );
+
+  return accounts.map((account) => {
+    const derived = computeAwsAccountDerivedMetrics(account, pricing);
+    const hasStorageMetric = derived.s3StorageBytes !== null || (derived.efsStorageBytes !== null && (derived.efsCount || 0) > 0);
+    return {
+      provider: account?.display_name || account?.account_id || '-',
+      accountCount: 1,
+      storageInUseBytes: hasStorageMetric ? derived.storageBytes : null,
+      egress24hBytes: derived.egress24h,
+      egress30dBytes: derived.egress30d,
+      ingress24hBytes: derived.ingress24h,
+      ingress30dBytes: derived.ingress30d,
+      transactions24h: derived.tx24h,
+      transactions30d: derived.tx30d,
+      estimatedCost24h: derived.costs.totalEstimatedCost24h,
+      estimatedCost30d: derived.costs.totalEstimatedCost30d,
+      currency: pricing.currency,
+      notes: `Region ${account?.region || '-'}, buckets ${formatWholeNumber(Math.max(0, Number(account?.bucket_count || 0)))}, efs ${formatWholeNumber(Math.max(0, Number(account?.efs_count || 0)))}`
+    };
+  });
+}
+
 function renderUnifiedStatRow(row) {
+  const rowClasses = [row.isTotal ? 'unified-total-row' : '', row.isBreakdown ? 'unified-breakdown-row' : '']
+    .filter(Boolean)
+    .join(' ');
+  const canExpand = Boolean(row.canExpand);
+  const isExpanded = Boolean(row.isExpanded);
+  const toggleControl = canExpand
+    ? `<button class="row-toggle unified-row-toggle" data-action="toggle-unified-breakdown" data-provider-id="${escapeHtml(
+        row.providerId || ''
+      )}" title="${isExpanded ? 'Collapse breakdown' : 'Expand breakdown'}">${isExpanded ? '-' : '+'}</button>`
+    : '';
+
   return `
-    <tr class="${row.isTotal ? 'unified-total-row' : ''}">
-      <td>${escapeHtml(row.provider)}</td>
+    <tr class="${rowClasses}">
+      <td>
+        <div class="unified-provider-cell ${row.isBreakdown ? 'unified-provider-cell-breakdown' : ''}">
+          ${toggleControl}
+          <span class="unified-provider-label">${escapeHtml(row.provider)}</span>
+        </div>
+      </td>
       <td>${escapeHtml(formatWholeNumber(row.accountCount))}</td>
       <td>${escapeHtml(formatMetricValue(row.storageInUseBytes, formatBytes))}</td>
       <td>${escapeHtml(formatMetricValue(row.egress24hBytes, formatBytes))}</td>
@@ -1852,7 +2010,7 @@ function renderUnifiedStatRow(row) {
       <td>${escapeHtml(formatMetricValue(row.transactions30d, formatWholeNumber))}</td>
       <td>${escapeHtml(formatMetricValue(row.estimatedCost24h, (value) => formatCurrency(value, row.currency)))}</td>
       <td>${escapeHtml(formatMetricValue(row.estimatedCost30d, (value) => formatCurrency(value, row.currency)))}</td>
-      <td>${escapeHtml(row.notes)}</td>
+      <td>${escapeHtml(row.notes || '-')}</td>
     </tr>
   `;
 }
@@ -1869,6 +2027,7 @@ function renderUnifiedStats() {
 
   const rows = [
     {
+      providerId: 'azure',
       provider: 'Azure',
       accountCount: azureStats.accountCount,
       storageInUseBytes: azureStats.usedCapacity.total,
@@ -1884,9 +2043,11 @@ function renderUnifiedStats() {
       notes:
         azureStats.accountCount > 0
           ? `Coverage used ${azureStats.usedCapacity.accountCountWithMetric}/${azureStats.accountCount}, egr24 ${azureStats.egress24h.accountCountWithMetric}/${azureStats.accountCount}, egr30 ${azureStats.egress30d.accountCountWithMetric}/${azureStats.accountCount}, ing24 ${azureStats.ingress24h.accountCountWithMetric}/${azureStats.accountCount}, ing30 ${azureStats.ingress30d.accountCountWithMetric}/${azureStats.accountCount}, tx24 ${azureStats.transactions24h.accountCountWithMetric}/${azureStats.accountCount}, tx30 ${azureStats.transactions30d.accountCountWithMetric}/${azureStats.accountCount}.`
-          : 'No Azure accounts in current selected scope.'
+          : 'No Azure accounts in current selected scope.',
+      breakdownRows: buildUnifiedAzureBreakdownRows(azureStats.pricing)
     },
     {
+      providerId: 'wasabi',
       provider: 'Wasabi',
       accountCount: wasabiStats.accountCount,
       storageInUseBytes: wasabiStats.storageBytes,
@@ -1902,9 +2063,11 @@ function renderUnifiedStats() {
       notes:
         wasabiStats.accountCount > 0
           ? `${wasabiStats.bucketCount.toLocaleString()} cached bucket(s). Ingress/egress/transaction metrics are not exposed by current Wasabi utilization API integration.`
-          : 'No Wasabi accounts configured or loaded.'
+          : 'No Wasabi accounts configured or loaded.',
+      breakdownRows: buildUnifiedWasabiBreakdownRows(wasabiStats.pricing)
     },
     {
+      providerId: 'vsax',
       provider: 'VSAx',
       accountCount: vsaxStats.groupCount,
       storageInUseBytes: vsaxStats.usedBytes,
@@ -1920,9 +2083,11 @@ function renderUnifiedStats() {
       notes:
         vsaxStats.groupCount > 0
           ? `${vsaxStats.deviceCount.toLocaleString()} device(s), ${vsaxStats.diskCount.toLocaleString()} disk row(s) in cache. Disk usage cost estimate only (${formatCurrency(vsaxStats.pricing.storagePricePerTbMonth, vsaxStats.pricing.currency)}/TB-month).`
-          : 'No VSAx groups loaded.'
+          : 'No VSAx groups loaded.',
+      breakdownRows: buildUnifiedVsaxBreakdownRows(vsaxStats.pricing)
     },
     {
+      providerId: 'aws',
       provider: 'AWS',
       accountCount: awsStats.accountCount,
       storageInUseBytes: awsStats.storage.accountCountWithMetric > 0 ? awsStats.storage.total : null,
@@ -1938,9 +2103,11 @@ function renderUnifiedStats() {
       notes:
         awsStats.accountCount > 0
           ? `Coverage storage ${awsStats.storage.accountCountWithMetric}/${awsStats.accountCount}, objects ${awsStats.objects.accountCountWithMetric}/${awsStats.accountCount}, egr24 ${awsStats.egress24h.accountCountWithMetric}/${awsStats.accountCount}, egr30 ${awsStats.egress30d.accountCountWithMetric}/${awsStats.accountCount}, ing24 ${awsStats.ingress24h.accountCountWithMetric}/${awsStats.accountCount}, ing30 ${awsStats.ingress30d.accountCountWithMetric}/${awsStats.accountCount}, tx24 ${awsStats.transactions24h.accountCountWithMetric}/${awsStats.accountCount}, tx30 ${awsStats.transactions30d.accountCountWithMetric}/${awsStats.accountCount}, efs ${awsStats.efsCount.accountCountWithMetric}/${awsStats.accountCount}; security scanned buckets ${formatWholeNumber(awsStats.securityScanBuckets.total)}, security errors ${formatWholeNumber(awsStats.securityErrorBuckets.total)}.`
-          : 'No AWS accounts configured or loaded.'
+          : 'No AWS accounts configured or loaded.',
+      breakdownRows: buildUnifiedAwsBreakdownRows(awsStats.pricing)
     },
     {
+      providerId: 'gcp',
       provider: 'GCP',
       accountCount: 0,
       storageInUseBytes: null,
@@ -1956,6 +2123,7 @@ function renderUnifiedStats() {
       notes: 'Provider integration not implemented yet.'
     },
     {
+      providerId: 'other',
       provider: 'Other',
       accountCount: 0,
       storageInUseBytes: null,
@@ -1971,6 +2139,36 @@ function renderUnifiedStats() {
       notes: 'Provider integration not implemented yet.'
     }
   ];
+
+  const expandableProviderIds = new Set(
+    rows.filter((row) => Array.isArray(row.breakdownRows) && row.breakdownRows.length > 0).map((row) => row.providerId)
+  );
+  for (const providerId of Array.from(state.expandedUnifiedProviderIds)) {
+    if (!expandableProviderIds.has(providerId)) {
+      state.expandedUnifiedProviderIds.delete(providerId);
+    }
+  }
+
+  const renderedRows = [];
+  for (const row of rows) {
+    const canExpand = Array.isArray(row.breakdownRows) && row.breakdownRows.length > 0;
+    const isExpanded = canExpand && state.expandedUnifiedProviderIds.has(row.providerId);
+    renderedRows.push({
+      ...row,
+      canExpand,
+      isExpanded
+    });
+
+    if (canExpand && isExpanded) {
+      for (const breakdownRow of row.breakdownRows) {
+        renderedRows.push({
+          ...breakdownRow,
+          isBreakdown: true,
+          canExpand: false
+        });
+      }
+    }
+  }
 
   const totalRow = rows.reduce(
     (acc, row) => ({
@@ -2007,7 +2205,7 @@ function renderUnifiedStats() {
     }
   );
 
-  ui.unifiedStatsBody.innerHTML = [...rows, totalRow].map((row) => renderUnifiedStatRow(row)).join('');
+  ui.unifiedStatsBody.innerHTML = [...renderedRows, totalRow].map((row) => renderUnifiedStatRow(row)).join('');
 
   if (ui.unifiedStatsCoverage) {
     ui.unifiedStatsCoverage.textContent = `Azure scoped accounts: ${azureStats.accountCount}. AWS accounts: ${awsStats.accountCount}. Wasabi accounts: ${wasabiStats.accountCount}. VSAx groups: ${vsaxStats.groupCount}. Other providers pending integration.`;
@@ -3778,6 +3976,7 @@ function renderVsaxGroups() {
       <td>
         <div class=\"actions\">
           <button data-action=\"sync-vsax-group\" data-group-name=\"${escapeHtml(groupName)}\" ${syncDisabled ? 'disabled' : ''}>Sync now</button>
+          <button data-action=\"export-vsax-group\" data-group-name=\"${escapeHtml(groupName)}\" ${state.exportCsvActive ? 'disabled' : ''}>Export CSV</button>
         </div>
       </td>
     `;
@@ -5489,6 +5688,29 @@ window.addEventListener('resize', () => {
   applyActivityDrawerWidth(state.activityDrawerWidth || ACTIVITY_DRAWER_WIDTH_DEFAULT, false);
 });
 
+if (ui.unifiedStatsBody) {
+  ui.unifiedStatsBody.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLButtonElement)) {
+      return;
+    }
+    const action = target.getAttribute('data-action');
+    if (action !== 'toggle-unified-breakdown') {
+      return;
+    }
+    const providerId = String(target.getAttribute('data-provider-id') || '').trim();
+    if (!providerId) {
+      return;
+    }
+    if (state.expandedUnifiedProviderIds.has(providerId)) {
+      state.expandedUnifiedProviderIds.delete(providerId);
+    } else {
+      state.expandedUnifiedProviderIds.add(providerId);
+    }
+    renderUnifiedStats();
+  });
+}
+
 ui.accountsBody.addEventListener('click', async (event) => {
   const target = event.target;
   if (!(target instanceof HTMLButtonElement)) {
@@ -5668,6 +5890,11 @@ if (ui.vsaxGroupsBody) {
       }
       if (action === 'sync-vsax-group') {
         await syncVsaxGroupsUi([groupName], true);
+      }
+      if (action === 'export-vsax-group') {
+        await runCsvExport(`VSAx group ${groupName} CSV`, async () => {
+          await exportVsaxGroupCsv(groupName);
+        });
       }
     } catch (error) {
       log(`VSAx action failed for group ${groupName}: ${error.message}`, true);

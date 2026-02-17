@@ -487,6 +487,38 @@ p {
   color: var(--muted);
 }
 
+.unified-provider-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.unified-provider-label {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.unified-row-toggle {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+}
+
+.unified-provider-cell-breakdown {
+  padding-left: 16px;
+}
+
+.unified-provider-cell-breakdown .unified-provider-label {
+  color: var(--muted);
+}
+
+.unified-breakdown-row td {
+  background: var(--surface-soft);
+}
+
 .unified-total-row td {
   border-top: 2px solid var(--line);
   font-weight: 600;

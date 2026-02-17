@@ -2996,6 +2996,53 @@ ORDER BY aa.display_name COLLATE NOCASE, ab.bucket_name COLLATE NOCASE
   return db.prepare(query).all(...(hasFilter ? ids : []));
 }
 
+function getVsaxDiskExportRows(groupNames = []) {
+  const names = Array.isArray(groupNames)
+    ? groupNames
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+    : [];
+  const hasFilter = names.length > 0;
+  const placeholders = hasFilter ? names.map(() => '?').join(',') : '';
+
+  const query = `
+SELECT
+  vg.group_name,
+  vg.is_selected,
+  vg.last_sync_at AS group_last_sync_at,
+  vg.last_error AS group_last_error,
+  dev.device_id,
+  dev.device_name,
+  dev.cpu_usage,
+  dev.memory_usage,
+  dev.memory_total,
+  dev.disk_total_bytes AS device_total_allocated_bytes,
+  dev.disk_used_bytes AS device_total_used_bytes,
+  dev.disk_free_bytes AS device_total_free_bytes,
+  dev.disk_count AS device_disk_count,
+  dev.last_sync_at AS device_last_sync_at,
+  dev.last_error AS device_last_error,
+  disk.disk_name,
+  disk.is_system,
+  disk.total_bytes,
+  disk.used_bytes,
+  disk.free_bytes,
+  disk.free_percentage,
+  disk.last_sync_at,
+  disk.last_error
+FROM vsax_disks disk
+LEFT JOIN vsax_devices dev
+  ON dev.group_name = disk.group_name
+ AND dev.device_id = disk.device_id
+LEFT JOIN vsax_groups vg
+  ON vg.group_name = disk.group_name
+WHERE disk.is_active=1 ${hasFilter ? `AND disk.group_name IN (${placeholders})` : ''}
+ORDER BY disk.group_name COLLATE NOCASE, COALESCE(disk.device_name, disk.device_id) COLLATE NOCASE, disk.disk_name COLLATE NOCASE
+`;
+
+  return db.prepare(query).all(...(hasFilter ? names : []));
+}
+
 app.get('/api/config', (_req, res) => {
   const safeClientId = tokenProvider.clientId
     ? `${tokenProvider.clientId.slice(0, 8)}...${tokenProvider.clientId.slice(-4)}`
@@ -3475,6 +3522,48 @@ app.get('/api/export/csv/ip-aliases', (_req, res, next) => {
     sendCsvResponse(res, {
       filenamePrefix: 'ip-aliases',
       columns: ['ip_address', 'server_name', 'updated_at'],
+      rows
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/export/csv/vsax/disks', (req, res, next) => {
+  try {
+    const groupName = String(req.query.groupName || '').trim();
+    if (!groupName) {
+      return res.status(400).json({ error: 'groupName is required' });
+    }
+
+    const rows = getVsaxDiskExportRows([groupName]);
+    sendCsvResponse(res, {
+      filenamePrefix: `vsax-group-disks-${groupName.replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'export'}`,
+      columns: [
+        'group_name',
+        'is_selected',
+        'group_last_sync_at',
+        'group_last_error',
+        'device_id',
+        'device_name',
+        'cpu_usage',
+        'memory_usage',
+        'memory_total',
+        'device_total_allocated_bytes',
+        'device_total_used_bytes',
+        'device_total_free_bytes',
+        'device_disk_count',
+        'device_last_sync_at',
+        'device_last_error',
+        'disk_name',
+        'is_system',
+        'total_bytes',
+        'used_bytes',
+        'free_bytes',
+        'free_percentage',
+        'last_sync_at',
+        'last_error'
+      ],
       rows
     });
   } catch (error) {

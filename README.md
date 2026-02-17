@@ -24,6 +24,7 @@ CloudStorageStudio is a local web app that:
 - Supports Kaseya VSAx disk inventory in a dedicated VSAx tab using server-side API credentials.
 - Supports VSAx group scoping via `VSAX_GROUPS` (optional). If unset, the app auto-discovers all groups from VSAx and lets you pick selected groups in the UI.
 - Pulls/caches VSAx disk allocation and usage at group/device/disk level.
+- Supports per-group VSAx CSV export from the group action row.
 - Adds a VSAx group picker (Azure-style checklist) to save selected groups for display/sync scope.
 - Estimates VSAx storage cost for 24h and 30d using configurable pricing assumptions (default `$120/TB-month`).
 - Syncs Wasabi storage pricing from the public pricing page into SQLite cache on startup and schedule.
