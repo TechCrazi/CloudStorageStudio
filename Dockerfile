@@ -1,17 +1,23 @@
-FROM node:20-alpine
-
+# Builder Stage
+FROM node:20-alpine AS builder
 WORKDIR /app
-
 # Install native build tools for better-sqlite3 and dependencies
 RUN apk add --no-cache python3 make g++
-
 # Copy package descriptors
 COPY package*.json ./
-
-# Install dependencies securely (ignoring dev dependencies)
+# Install only production dependencies securely
 RUN npm ci --omit=dev
 
-# Copy application code
+# Runner Stage
+FROM node:20-alpine AS runner
+WORKDIR /app
+# Upgrade base image packages to resolve Trivy OS vulnerabilities (e.g. busybox, zlib)
+RUN apk upgrade --no-cache && \
+    npm install -g npm@latest
+
+# Copy only what we need from builder (no python3, make, or package-lock.json)
+COPY --from=builder /app/node_modules ./node_modules
+COPY package.json ./
 COPY src/ ./src/
 COPY public/ ./public/
 
@@ -27,4 +33,4 @@ ENV NODE_ENV=production
 
 EXPOSE 8787
 
-CMD ["npm", "start"]
+CMD ["node", "src/server.js"]
