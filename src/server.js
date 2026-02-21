@@ -1,6 +1,7 @@
 require('dotenv').config();
 
 const express = require('express');
+const helmet = require('helmet');
 const path = require('path');
 const { randomUUID } = require('crypto');
 const {
@@ -82,6 +83,8 @@ const { fetchAzureHotLrsPricingAssumptions, fetchWasabiPayGoPricingAssumptions }
 const { createLogger, loggingConfig, parseBoolean } = require('./logger');
 
 const app = express();
+app.disable('x-powered-by');
+app.use(helmet());
 const port = Number.parseInt(process.env.PORT || '8787', 10);
 const cacheTtlMinutes = Number.parseInt(process.env.CACHE_TTL_MINUTES || '360', 10);
 const securityCacheTtlMinutes = Number.parseInt(process.env.SECURITY_CACHE_TTL_MINUTES || '720', 10);
@@ -2909,8 +2912,8 @@ ORDER BY s.display_name COLLATE NOCASE, sa.name COLLATE NOCASE
 function getWasabiBucketExportRows(accountIds = []) {
   const ids = Array.isArray(accountIds)
     ? accountIds
-        .map((value) => String(value || '').trim().toLowerCase())
-        .filter(Boolean)
+      .map((value) => String(value || '').trim().toLowerCase())
+      .filter(Boolean)
     : [];
   const hasFilter = ids.length > 0;
   const placeholders = hasFilter ? ids.map(() => '?').join(',') : '';
@@ -2940,8 +2943,8 @@ ORDER BY wa.display_name COLLATE NOCASE, wb.bucket_name COLLATE NOCASE
 function getAwsBucketExportRows(accountIds = []) {
   const ids = Array.isArray(accountIds)
     ? accountIds
-        .map((value) => String(value || '').trim().toLowerCase())
-        .filter(Boolean)
+      .map((value) => String(value || '').trim().toLowerCase())
+      .filter(Boolean)
     : [];
   const hasFilter = ids.length > 0;
   const placeholders = hasFilter ? ids.map(() => '?').join(',') : '';
@@ -2999,8 +3002,8 @@ ORDER BY aa.display_name COLLATE NOCASE, ab.bucket_name COLLATE NOCASE
 function getVsaxDiskExportRows(groupNames = []) {
   const names = Array.isArray(groupNames)
     ? groupNames
-        .map((value) => String(value || '').trim())
-        .filter(Boolean)
+      .map((value) => String(value || '').trim())
+      .filter(Boolean)
     : [];
   const hasFilter = names.length > 0;
   const placeholders = hasFilter ? names.map(() => '?').join(',') : '';
@@ -3335,17 +3338,17 @@ app.get('/api/export/csv/wasabi/accounts', (req, res, next) => {
     const rows = getWasabiAccounts()
       .filter((account) => !accountFilter.size || accountFilter.has(String(account.account_id || '').trim().toLowerCase()))
       .map((account) => ({
-      account_id: account.account_id,
-      display_name: account.display_name,
-      region: account.region,
-      s3_endpoint: account.s3_endpoint,
-      stats_endpoint: account.stats_endpoint,
-      bucket_count: account.bucket_count,
-      total_usage_bytes: account.total_usage_bytes,
-      total_object_count: account.total_object_count,
-      bucket_names_csv: account.bucket_names_csv || '',
-      last_sync_at: account.last_sync_at,
-      last_error: account.last_error
+        account_id: account.account_id,
+        display_name: account.display_name,
+        region: account.region,
+        s3_endpoint: account.s3_endpoint,
+        stats_endpoint: account.stats_endpoint,
+        bucket_count: account.bucket_count,
+        total_usage_bytes: account.total_usage_bytes,
+        total_object_count: account.total_object_count,
+        bucket_names_csv: account.bucket_names_csv || '',
+        last_sync_at: account.last_sync_at,
+        last_error: account.last_error
       }));
 
     sendCsvResponse(res, {
