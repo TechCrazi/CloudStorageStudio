@@ -270,7 +270,11 @@ slim build \
   --env AZURE_CLIENT_ID="your-client-id" \
   --env AZURE_CLIENT_SECRET="your-client-secret" \
   --env AWS_DEFAULT_ACCESS_KEY_ID="your-aws-access-key" \
-  --env AWS_DEFAULT_SECRET_ACCESS_KEY="your-aws-secret-key"
+  --env AWS_DEFAULT_SECRET_ACCESS_KEY="your-aws-secret-key" \
+  --env WASABI_ACCOUNTS_JSON="[{\"accountId\":\"wasabi-1\",\"accessKey\":\"key\",\"secretKey\":\"secret\",\"region\":\"us-east-1\"}]" \
+  --env VSAX_BASE_URL="your-vsax-url" \
+  --env VSAX_API_TOKEN_ID="your-vsax-token-id" \
+  --env VSAX_API_TOKEN_SECRET="your-vsax-token-secret"
 ```
 
   - Original Image: 281.51 MB
@@ -288,7 +292,11 @@ slim build \
   --env AZURE_CLIENT_ID="your-client-id" \
   --env AZURE_CLIENT_SECRET="your-client-secret" \
   --env AWS_DEFAULT_ACCESS_KEY_ID="your-aws-access-key" \
-  --env AWS_DEFAULT_SECRET_ACCESS_KEY="your-aws-secret-key"
+  --env AWS_DEFAULT_SECRET_ACCESS_KEY="your-aws-secret-key" \
+  --env WASABI_ACCOUNTS_JSON="[{\"accountId\":\"wasabi-1\",\"accessKey\":\"key\",\"secretKey\":\"secret\",\"region\":\"us-east-1\"}]" \
+  --env VSAX_BASE_URL="your-vsax-url" \
+  --env VSAX_API_TOKEN_ID="your-vsax-token-id" \
+  --env VSAX_API_TOKEN_SECRET="your-vsax-token-secret"
 ```
   - Original Image: 225.42 MB
   - Slim Image: 189.86 MB
@@ -306,7 +314,11 @@ slim build \
   --env AZURE_CLIENT_ID="your-client-id" \
   --env AZURE_CLIENT_SECRET="your-client-secret" \
   --env AWS_DEFAULT_ACCESS_KEY_ID="your-aws-access-key" \
-  --env AWS_DEFAULT_SECRET_ACCESS_KEY="your-aws-secret-key"
+  --env AWS_DEFAULT_SECRET_ACCESS_KEY="your-aws-secret-key" \
+  --env WASABI_ACCOUNTS_JSON="[{\"accountId\":\"wasabi-1\",\"accessKey\":\"key\",\"secretKey\":\"secret\",\"region\":\"us-east-1\"}]" \
+  --env VSAX_BASE_URL="your-vsax-url" \
+  --env VSAX_API_TOKEN_ID="your-vsax-token-id" \
+  --env VSAX_API_TOKEN_SECRET="your-vsax-token-secret"
 ```
 
 ##### Push Slim Image to GHCR
