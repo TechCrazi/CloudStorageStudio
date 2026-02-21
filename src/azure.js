@@ -110,6 +110,28 @@ const scheduler = new RequestScheduler({
 });
 
 async function scheduledAzureFetch(url, options) {
+  let urlObj;
+  try {
+    urlObj = new URL(url);
+  } catch (_e) {
+    throw new Error(`Invalid URL provided to Azure fetch: ${url}`);
+  }
+
+  const host = urlObj.hostname.toLowerCase();
+  const isAzureHost =
+    host === 'management.azure.com' ||
+    host === 'management.usgovcloudapi.net' ||
+    host === 'management.chinacloudapi.cn' ||
+    host === 'management.microsoftazure.de' ||
+    host.endsWith('.blob.core.windows.net') ||
+    host.endsWith('.blob.core.usgovcloudapi.net') ||
+    host.endsWith('.blob.core.chinacloudapi.cn') ||
+    host.endsWith('.blob.core.cloudapi.de');
+
+  if (urlObj.protocol !== 'https:' || !isAzureHost) {
+    throw new Error(`SSRF Protection: Hostname '${host}' is not a permitted Azure HTTPS endpoint.`);
+  }
+
   return scheduler.schedule(async () => {
     let attempt = 0;
 

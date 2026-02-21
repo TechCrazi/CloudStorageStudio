@@ -3554,7 +3554,7 @@ app.get('/api/export/csv/vsax/disks', (req, res, next) => {
 
     const rows = getVsaxDiskExportRows([groupName]);
     sendCsvResponse(res, {
-      filenamePrefix: `vsax-group-disks-${groupName.replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'export'}`,
+      filenamePrefix: `vsax-group-disks-${groupName.replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+/, '').replace(/-+$/, '') || 'export'}`,
       columns: [
         'group_name',
         'is_selected',
