@@ -43,6 +43,7 @@ CloudStorageStudio is a local web app that:
 - Static HTML/CSS/JS frontend
 - OAuth2 client credentials (server-side token acquisition)
 - SQLite (`better-sqlite3`) for cache
+- `helmet` for HTTP security headers and disabling `X-Powered-By`
 
 ## Prerequisites
 
