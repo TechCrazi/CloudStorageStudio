@@ -84,7 +84,20 @@ const { createLogger, loggingConfig, parseBoolean } = require('./logger');
 
 const app = express();
 app.disable('x-powered-by');
-app.use(helmet());
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        fontSrc: ["'self'", "https://fonts.gstatic.com"],
+        imgSrc: ["'self'", "data:"],
+        connectSrc: ["'self'"],
+      },
+    },
+  })
+);
 const port = Number.parseInt(process.env.PORT || '8787', 10);
 const cacheTtlMinutes = Number.parseInt(process.env.CACHE_TTL_MINUTES || '360', 10);
 const securityCacheTtlMinutes = Number.parseInt(process.env.SECURITY_CACHE_TTL_MINUTES || '720', 10);
