@@ -212,3 +212,109 @@ npm run dev
 - Activity logs are shown in a floating right-side drawer.
 - Storage account table shows per-account progress state while pull operations are running.
 - Pull-all now runs as a server-side background job so browser refresh does not stop an active run.
+
+## Container Scan via Trivy
+
+#### Install Trivy
+```bash
+brew install trivy
+```
+
+#### Scan Image
+```bash
+trivy image ghcr.io/techcrazi/cloudstoragestudio:latest
+```
+
+## Container Scan via Slim
+
+#### Install Slim MAC
+```bash
+brew install docker-slim
+```
+
+#### Install Slim Windows
+ - Enable WSL on Windows Desktop
+ - Install Docker Desktop
+ - Install Ubuntu WSL image
+
+```powershell
+wsl --install -d Ubuntu
+```
+ - Update Docker Desktop Settings
+    
+  - Open Docker Desktop → Settings
+  - Go to:
+  - Resources → WSL Integration
+
+  - Turn ON:
+	  -  Enable integration with my default WSL distro
+	  -  Ubuntu
+
+  - Click Apply & Restart
+
+  - SSH into Ubuntu WSL
+  - Install Slim
+  ```bash
+  curl -sL https://raw.githubusercontent.com/slimtoolkit/slim/master/scripts/install-slim.sh | sudo -E bash -
+  ```
+
+##### Scan & Build Image AMD64 (On Intel or AMD Processor)
+```bash
+slim build \
+  --target ghcr.io/techcrazi/cloudstoragestudio:latest \
+  --tag ghcr.io/techcrazi/cloudstoragestudio:slim-amd64 \
+  --image-build-arch amd64 \
+  --publish-port 3000:3000 \
+  --include-path '/app' \
+  --env AWS_ACCESS_KEY_ID="AWS-API-Key" \
+  --env AWS_SECRET_ACCESS_KEY="AWS-API-Secret" \
+  --env GCP_PRICING_API_KEY="GCP-Pricing-API-Key" \
+  --env GCP_API_KEY="GCP-API-Key" 
+```
+
+  - Original Image: 281.51 MB
+  - Slim Image: 189.86 MB
+
+##### Scan & Build Image ARM64 (On Apple or ARM Processor)
+```bash
+slim build \
+  --target ghcr.io/techcrazi/cloudstoragestudio:latest \
+  --tag ghcr.io/techcrazi/cloudstoragestudio:slim-arm64 \
+  --image-build-arch arm64 \
+  --publish-port 3000:3000 \
+  --include-path '/app' \
+  --env AWS_ACCESS_KEY_ID="AWS-API-Key" \
+  --env AWS_SECRET_ACCESS_KEY="AWS-API-Secret" \
+  --env GCP_PRICING_API_KEY="GCP-Pricing-API-Key" \
+  --env GCP_API_KEY="GCP-API-Key" 
+```
+  - Original Image: 225.42 MB
+  - Slim Image: 189.86 MB
+
+##### Image Testing
+```bash
+slim build \
+  --target ghcr.io/techcrazi/cloudstoragestudio:latest \
+  --tag ghcr.io/techcrazi/cloudstoragestudio:slim-arm64 \
+  --image-build-arch arm64 \
+  --publish-port 3000:3000 \
+  --continue-after=enter \
+  --include-path '/app' \
+  --env AWS_ACCESS_KEY_ID="AWS-API-Key" \
+  --env AWS_SECRET_ACCESS_KEY="AWS-API-Secret" \
+  --env GCP_PRICING_API_KEY="GCP-Pricing-API-Key" \
+  --env GCP_API_KEY="GCP-API-Key" 
+```
+
+##### Push Slim Image to GHCR
+```bash
+docker login
+docker push ghcr.io/techcrazi/cloudstoragestudio:slim-amd64
+docker push ghcr.io/techcrazi/cloudstoragestudio:slim-arm64
+
+docker manifest create ghcr.io/techcrazi/cloudstoragestudio:slim \
+  --amend ghcr.io/techcrazi/cloudstoragestudio:slim-amd64 \
+  --amend ghcr.io/techcrazi/cloudstoragestudio:slim-arm64
+
+docker manifest push ghcr.io/techcrazi/cloudstoragestudio:slim
+```
