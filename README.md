@@ -290,8 +290,8 @@ slim build \
   --env VSAX_API_TOKEN_SECRET="your-vsax-token-secret"
 ```
 
-  - Original Image: 68 MB
-  - Slim Image: 55 MB
+  - Original Image: 313 MB
+  - Slim Image: 163 MB
 
 ##### Scan & Build Image ARM64 (On Apple or ARM Processor)
 ```bash
@@ -311,8 +311,8 @@ slim build \
   --env VSAX_API_TOKEN_ID="your-vsax-token-id" \
   --env VSAX_API_TOKEN_SECRET="your-vsax-token-secret"
 ```
-  - Original Image: 68 MB
-  - Slim Image: 55 MB
+  - Original Image: 313 MB
+  - Slim Image: 163 MB
 
 ##### Image Testing
 ```bash

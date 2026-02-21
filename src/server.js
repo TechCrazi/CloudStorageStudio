@@ -3552,9 +3552,9 @@ app.get('/api/export/csv/vsax/disks', (req, res, next) => {
       return res.status(400).json({ error: 'groupName is required' });
     }
 
-    const rows = getVsaxDiskExportRows([groupName]);
+    const safeGroupName = groupName.slice(0, 100).replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
     sendCsvResponse(res, {
-      filenamePrefix: `vsax-group-disks-${groupName.replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+/, '').replace(/-+$/, '') || 'export'}`,
+      filenamePrefix: `vsax-group-disks-${safeGroupName || 'export'}`,
       columns: [
         'group_name',
         'is_selected',

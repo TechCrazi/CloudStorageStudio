@@ -136,7 +136,7 @@ async function scheduledAzureFetch(url, options) {
     let attempt = 0;
 
     while (true) {
-      const res = await fetch(url, options);
+      const res = await fetch(urlObj.href, options);
 
       if (!shouldRetryStatus(res.status) || attempt >= azureThrottle.maxRetries) {
         return res;
