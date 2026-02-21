@@ -22,9 +22,9 @@ RUN mkdir -p .data && chown -R node:node .data
 USER node
 
 # Set the configured port explicitly to match README commands
-ENV PORT=3000
+ENV PORT=8787
 ENV NODE_ENV=production
 
-EXPOSE 3000
+EXPOSE 8787
 
 CMD ["npm", "start"]

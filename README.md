@@ -221,7 +221,7 @@ You can easily start the application using Docker by passing your `.env` configu
 docker run -d \
   --name cloudstoragestudio \
   --env-file .env \
-  -p 3000:3000 \
+  -p 8787:8787 \
   ghcr.io/techcrazi/cloudstoragestudio:latest
 ```
 
@@ -276,7 +276,7 @@ slim build \
   --target ghcr.io/techcrazi/cloudstoragestudio:latest \
   --tag ghcr.io/techcrazi/cloudstoragestudio:slim-amd64 \
   --image-build-arch amd64 \
-  --publish-port 3000:3000 \
+  --publish-port 8787:8787 \
   --include-path '/app' \
   --env AZURE_TENANT_ID="your-tenant-id" \
   --env AZURE_CLIENT_ID="your-client-id" \
@@ -298,7 +298,7 @@ slim build \
   --target ghcr.io/techcrazi/cloudstoragestudio:latest \
   --tag ghcr.io/techcrazi/cloudstoragestudio:slim-arm64 \
   --image-build-arch arm64 \
-  --publish-port 3000:3000 \
+  --publish-port 8787:8787 \
   --include-path '/app' \
   --env AZURE_TENANT_ID="your-tenant-id" \
   --env AZURE_CLIENT_ID="your-client-id" \
@@ -319,7 +319,7 @@ slim build \
   --target ghcr.io/techcrazi/cloudstoragestudio:latest \
   --tag ghcr.io/techcrazi/cloudstoragestudio:slim-arm64 \
   --image-build-arch arm64 \
-  --publish-port 3000:3000 \
+  --publish-port 8787:8787 \
   --continue-after=enter \
   --include-path '/app' \
   --env AZURE_TENANT_ID="your-tenant-id" \
