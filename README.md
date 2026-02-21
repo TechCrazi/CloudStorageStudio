@@ -213,6 +213,18 @@ npm run dev
 - Storage account table shows per-account progress state while pull operations are running.
 - Pull-all now runs as a server-side background job so browser refresh does not stop an active run.
 
+## Running the Docker Container
+
+You can easily start the application using Docker by passing your `.env` configuration file directly to `docker run`. 
+
+```bash
+docker run -d \
+  --name cloudstoragestudio \
+  --env-file .env \
+  -p 3000:3000 \
+  ghcr.io/techcrazi/cloudstoragestudio:latest
+```
+
 ## Container Scan via Trivy
 
 #### Install Trivy
