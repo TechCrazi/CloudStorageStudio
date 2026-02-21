@@ -118,12 +118,13 @@ async function scheduledAzureFetch(url, options) {
   }
 
   const host = urlObj.hostname.toLowerCase();
-  const allowedExactHosts = new Set([
-    'management.azure.com',
-    'management.usgovcloudapi.net',
-    'management.chinacloudapi.cn',
-    'management.microsoftazure.de'
-  ]);
+  const staticAzureHosts = {
+    'management.azure.com': 'management.azure.com',
+    'management.usgovcloudapi.net': 'management.usgovcloudapi.net',
+    'management.chinacloudapi.cn': 'management.chinacloudapi.cn',
+    'management.microsoftazure.de': 'management.microsoftazure.de'
+  };
+
   const allowedSuffixes = [
     '.blob.core.windows.net',
     '.blob.core.usgovcloudapi.net',
@@ -131,14 +132,27 @@ async function scheduledAzureFetch(url, options) {
     '.blob.core.cloudapi.de'
   ];
 
-  const isAzureHost = allowedExactHosts.has(host) || allowedSuffixes.some((s) => host.endsWith(s));
+  let safeHost = '';
+  if (staticAzureHosts[host]) {
+    safeHost = staticAzureHosts[host];
+  } else {
+    const suffix = allowedSuffixes.find((s) => host.endsWith(s));
+    if (suffix) {
+      const accountName = host.slice(0, -suffix.length);
+      // Azure storage accounts are 3-24 characters, alphanumeric.
+      // Validating and re-interpolating breaks the taint chain for static analysis.
+      if (/^[a-z0-9]{3,24}$/.test(accountName)) {
+        safeHost = `${accountName}${suffix}`;
+      }
+    }
+  }
 
-  if (urlObj.protocol !== 'https:' || !isAzureHost) {
+  if (urlObj.protocol !== 'https:' || !safeHost) {
     throw new Error(`SSRF Protection: Hostname '${host}' is not a permitted Azure HTTPS endpoint.`);
   }
 
-  // Reconstruct the URL string from validated parts to satisfy static analysis and break taint chains.
-  const cleanUrl = `${urlObj.protocol}//${urlObj.hostname}${urlObj.pathname}${urlObj.search}`;
+  // Reconstruct the URL string using the safeHost to satisfy static analysis.
+  const cleanUrl = `https://${safeHost}${urlObj.pathname}${urlObj.search}`;
 
   return scheduler.schedule(async () => {
     let attempt = 0;
