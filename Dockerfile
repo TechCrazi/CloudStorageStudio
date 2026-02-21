@@ -16,7 +16,7 @@ COPY src/ ./src/
 COPY public/ ./public/
 
 # Ensure SQLite cache directory exists and holds correct permissions
-RUN mkdir -p .data && chown -R node:node .data
+RUN mkdir -p data && chown -R node:node data
 
 # Drop privileges
 USER node
