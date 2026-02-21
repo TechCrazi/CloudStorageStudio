@@ -266,10 +266,11 @@ slim build \
   --image-build-arch amd64 \
   --publish-port 3000:3000 \
   --include-path '/app' \
-  --env AWS_ACCESS_KEY_ID="AWS-API-Key" \
-  --env AWS_SECRET_ACCESS_KEY="AWS-API-Secret" \
-  --env GCP_PRICING_API_KEY="GCP-Pricing-API-Key" \
-  --env GCP_API_KEY="GCP-API-Key" 
+  --env AZURE_TENANT_ID="your-tenant-id" \
+  --env AZURE_CLIENT_ID="your-client-id" \
+  --env AZURE_CLIENT_SECRET="your-client-secret" \
+  --env AWS_DEFAULT_ACCESS_KEY_ID="your-aws-access-key" \
+  --env AWS_DEFAULT_SECRET_ACCESS_KEY="your-aws-secret-key"
 ```
 
   - Original Image: 281.51 MB
@@ -283,10 +284,11 @@ slim build \
   --image-build-arch arm64 \
   --publish-port 3000:3000 \
   --include-path '/app' \
-  --env AWS_ACCESS_KEY_ID="AWS-API-Key" \
-  --env AWS_SECRET_ACCESS_KEY="AWS-API-Secret" \
-  --env GCP_PRICING_API_KEY="GCP-Pricing-API-Key" \
-  --env GCP_API_KEY="GCP-API-Key" 
+  --env AZURE_TENANT_ID="your-tenant-id" \
+  --env AZURE_CLIENT_ID="your-client-id" \
+  --env AZURE_CLIENT_SECRET="your-client-secret" \
+  --env AWS_DEFAULT_ACCESS_KEY_ID="your-aws-access-key" \
+  --env AWS_DEFAULT_SECRET_ACCESS_KEY="your-aws-secret-key"
 ```
   - Original Image: 225.42 MB
   - Slim Image: 189.86 MB
@@ -300,10 +302,11 @@ slim build \
   --publish-port 3000:3000 \
   --continue-after=enter \
   --include-path '/app' \
-  --env AWS_ACCESS_KEY_ID="AWS-API-Key" \
-  --env AWS_SECRET_ACCESS_KEY="AWS-API-Secret" \
-  --env GCP_PRICING_API_KEY="GCP-Pricing-API-Key" \
-  --env GCP_API_KEY="GCP-API-Key" 
+  --env AZURE_TENANT_ID="your-tenant-id" \
+  --env AZURE_CLIENT_ID="your-client-id" \
+  --env AZURE_CLIENT_SECRET="your-client-secret" \
+  --env AWS_DEFAULT_ACCESS_KEY_ID="your-aws-access-key" \
+  --env AWS_DEFAULT_SECRET_ACCESS_KEY="your-aws-secret-key"
 ```
 
 ##### Push Slim Image to GHCR
