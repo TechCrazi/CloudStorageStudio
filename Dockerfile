@@ -23,6 +23,8 @@ COPY public/ ./public/
 
 # Ensure SQLite cache directory exists and holds correct permissions
 RUN mkdir -p data && chown -R node:node data
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:8787/api/health || exit 1
 
 # Drop privileges
 USER node
