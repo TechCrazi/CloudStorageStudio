@@ -67,6 +67,7 @@ const ui = {
   vsaxLoadBtn: document.getElementById('vsaxLoadBtn'),
   saveVsaxGroupsBtn: document.getElementById('saveVsaxGroupsBtn'),
   vsaxGroupList: document.getElementById('vsaxGroupList'),
+  vsaxGroupSearchInput: document.getElementById('vsaxGroupSearchInput'),
   vsaxConfigInfo: document.getElementById('vsaxConfigInfo'),
   vsaxTotalAllocated: document.getElementById('vsaxTotalAllocated'),
   vsaxTotalUsed: document.getElementById('vsaxTotalUsed'),
@@ -1343,6 +1344,9 @@ function renderVsaxGroupSelection() {
   }
 
   syncVsaxButtonsDisabledState();
+  if (ui.vsaxGroupSearchInput) {
+    ui.vsaxGroupSearchInput.dispatchEvent(new Event('input'));
+  }
 }
 
 function renderAzureContentViews() {
@@ -1991,8 +1995,8 @@ function renderUnifiedStatRow(row) {
   const isExpanded = Boolean(row.isExpanded);
   const toggleControl = canExpand
     ? `<button class="row-toggle unified-row-toggle" data-action="toggle-unified-breakdown" data-provider-id="${escapeHtml(
-        row.providerId || ''
-      )}" title="${isExpanded ? 'Collapse breakdown' : 'Expand breakdown'}">${isExpanded ? '-' : '+'}</button>`
+      row.providerId || ''
+    )}" title="${isExpanded ? 'Collapse breakdown' : 'Expand breakdown'}">${isExpanded ? '-' : '+'}</button>`
     : '';
 
   return `
@@ -2430,11 +2434,10 @@ function buildContainerDetailMarkup(accountId) {
 
   return `
     <div class="detail-wrap">
-      ${
-        hasPermissionMismatch
-          ? '<div class="detail-error">Permission/network issue on one or more containers. Verify Storage Blob Data Reader role and firewall/private endpoint access.</div>'
-          : ''
-      }
+      ${hasPermissionMismatch
+      ? '<div class="detail-error">Permission/network issue on one or more containers. Verify Storage Blob Data Reader role and firewall/private endpoint access.</div>'
+      : ''
+    }
       <div class="inline-table-wrap">
         <table>
           <thead>
@@ -2460,11 +2463,10 @@ function buildSecurityProfileMarkup(account, record) {
 
   const profile = record.profile;
   if (!profile) {
-    return `<div class="detail-wrap detail-muted">${
-      record.last_security_scan_at
-        ? `No profile details available. Last checked ${escapeHtml(toLocalDate(record.last_security_scan_at))}.`
-        : 'No security profile cached for this account.'
-    }</div>`;
+    return `<div class="detail-wrap detail-muted">${record.last_security_scan_at
+      ? `No profile details available. Last checked ${escapeHtml(toLocalDate(record.last_security_scan_at))}.`
+      : 'No security profile cached for this account.'
+      }</div>`;
   }
 
   const security = profile.security || {};
@@ -2480,8 +2482,8 @@ function buildSecurityProfileMarkup(account, record) {
     : [];
   const privateEndpoints = Array.isArray(network.privateEndpointConnections)
     ? network.privateEndpointConnections
-        .map((connection) => `${connection?.name || 'private-endpoint'} (${connection?.status || 'Unknown'})`)
-        .filter(Boolean)
+      .map((connection) => `${connection?.name || 'private-endpoint'} (${connection?.status || 'Unknown'})`)
+      .filter(Boolean)
     : [];
   const enabledDiagSettings = Array.isArray(diagnostics.settings)
     ? diagnostics.settings.map((setting) => setting?.name).filter(Boolean)
@@ -2489,51 +2491,50 @@ function buildSecurityProfileMarkup(account, record) {
 
   return `
     <div class="detail-wrap">
-      ${
-        record.last_error
-          ? `<div class="detail-error">Last scan error: ${escapeHtml(record.last_error)}</div>`
-          : ''
-      }
+      ${record.last_error
+      ? `<div class="detail-error">Last scan error: ${escapeHtml(record.last_error)}</div>`
+      : ''
+    }
       <div class="security-grid">
         <div class="security-item"><span class="security-label">Last scanned</span><span>${escapeHtml(
-          toLocalDate(record.last_security_scan_at)
-        )}</span></div>
+      toLocalDate(record.last_security_scan_at)
+    )}</span></div>
         <div class="security-item"><span class="security-label">Public network access</span><span>${escapeHtml(
-          formatText(security.publicNetworkAccess)
-        )}</span></div>
+      formatText(security.publicNetworkAccess)
+    )}</span></div>
         <div class="security-item"><span class="security-label">Resource group</span><span>${escapeHtml(
-          formatText(account?.resource_group_name)
-        )}</span></div>
+      formatText(account?.resource_group_name)
+    )}</span></div>
         <div class="security-item"><span class="security-label">Firewall default action</span><span>${escapeHtml(
-          formatText(network.defaultAction)
-        )}</span></div>
+      formatText(network.defaultAction)
+    )}</span></div>
         <div class="security-item"><span class="security-label">TLS minimum</span><span>${escapeHtml(
-          formatText(security.minimumTlsVersion)
-        )}</span></div>
+      formatText(security.minimumTlsVersion)
+    )}</span></div>
         <div class="security-item"><span class="security-label">HTTPS required</span><span>${escapeHtml(
-          formatBool(security.supportsHttpsTrafficOnly)
-        )}</span></div>
+      formatBool(security.supportsHttpsTrafficOnly)
+    )}</span></div>
         <div class="security-item"><span class="security-label">Shared key access</span><span>${escapeHtml(
-          formatBool(security.allowSharedKeyAccess)
-        )}</span></div>
+      formatBool(security.allowSharedKeyAccess)
+    )}</span></div>
         <div class="security-item"><span class="security-label">Blob public access allowed</span><span>${escapeHtml(
-          formatBool(security.allowBlobPublicAccess)
-        )}</span></div>
+      formatBool(security.allowBlobPublicAccess)
+    )}</span></div>
         <div class="security-item"><span class="security-label">Lifecycle policy</span><span>${escapeHtml(
-          lifecycle.enabled ? `Enabled (${lifecycle.totalRules || 0} rules)` : 'Not enabled'
-        )}</span></div>
+      lifecycle.enabled ? `Enabled (${lifecycle.totalRules || 0} rules)` : 'Not enabled'
+    )}</span></div>
         <div class="security-item"><span class="security-label">Diagnostic settings</span><span>${escapeHtml(
-          `${diagnostics.settingCount || 0}`
-        )}</span></div>
+      `${diagnostics.settingCount || 0}`
+    )}</span></div>
         <div class="security-item"><span class="security-label">Delete retention enabled</span><span>${escapeHtml(
-          formatBool(blobService.deleteRetentionPolicy?.enabled)
-        )}</span></div>
+      formatBool(blobService.deleteRetentionPolicy?.enabled)
+    )}</span></div>
         <div class="security-item"><span class="security-label">Versioning enabled</span><span>${escapeHtml(
-          formatBool(blobService.versioningEnabled)
-        )}</span></div>
+      formatBool(blobService.versioningEnabled)
+    )}</span></div>
         <div class="security-item"><span class="security-label">Change feed enabled</span><span>${escapeHtml(
-          formatBool(blobService.changeFeedEnabled)
-        )}</span></div>
+      formatBool(blobService.changeFeedEnabled)
+    )}</span></div>
       </div>
       <div class="security-lists">
         <div>
@@ -2735,23 +2736,23 @@ function renderAccounts() {
   const query = normalizeSearch(ui.accountSearchInput.value);
   const filteredAccounts = query
     ? scopedAccounts.filter((acct) => {
-        const tagsText = formatTags(acct.tags);
-        return [
-          acct.name,
-          acct.subscription_name || acct.subscription_id,
-          acct.subscription_id,
-          acct.resource_group_name,
-          acct.location,
-          tagsText,
-          formatBytesOrDash(acct.metrics_used_capacity_bytes),
-          formatBytesOrDash(acct.metrics_egress_bytes_24h),
-          formatBytesOrDash(acct.metrics_egress_bytes_30d),
-          formatBytesOrDash(acct.metrics_ingress_bytes_24h),
-          formatBytesOrDash(acct.metrics_ingress_bytes_30d),
-          formatWholeNumberOrDash(acct.metrics_transactions_24h),
-          formatWholeNumberOrDash(acct.metrics_transactions_30d)
-        ].some((field) => containsSearch(field, query));
-      })
+      const tagsText = formatTags(acct.tags);
+      return [
+        acct.name,
+        acct.subscription_name || acct.subscription_id,
+        acct.subscription_id,
+        acct.resource_group_name,
+        acct.location,
+        tagsText,
+        formatBytesOrDash(acct.metrics_used_capacity_bytes),
+        formatBytesOrDash(acct.metrics_egress_bytes_24h),
+        formatBytesOrDash(acct.metrics_egress_bytes_30d),
+        formatBytesOrDash(acct.metrics_ingress_bytes_24h),
+        formatBytesOrDash(acct.metrics_ingress_bytes_30d),
+        formatWholeNumberOrDash(acct.metrics_transactions_24h),
+        formatWholeNumberOrDash(acct.metrics_transactions_30d)
+      ].some((field) => containsSearch(field, query));
+    })
     : scopedAccounts;
 
   if (!filteredAccounts.length) {
@@ -2773,8 +2774,7 @@ function renderAccounts() {
 
     const row = document.createElement('tr');
     row.innerHTML = `
-      <td><button class="row-toggle" data-action="toggle-containers" data-account-id="${accountId}" title="${
-        isExpanded ? 'Collapse container details' : 'Expand container details'
+      <td><button class="row-toggle" data-action="toggle-containers" data-account-id="${accountId}" title="${isExpanded ? 'Collapse container details' : 'Expand container details'
       }">${isExpanded ? '-' : '+'}</button></td>
       <td>${escapeHtml(account.name || '-')}</td>
       <td>${escapeHtml(account.subscription_name || account.subscription_id || '-')}</td>
@@ -2784,17 +2784,17 @@ function renderAccounts() {
       <td>${escapeHtml(String(cachedContainerCount))}</td>
       <td>${escapeHtml(formatBytes(account.total_size_bytes))}</td>
       <td class="metric-cell" title="${escapeHtml(formatBytesOrDash(account.metrics_used_capacity_bytes))}">${escapeHtml(
-      formatBytesOrDash(account.metrics_used_capacity_bytes)
-    )}</td>
+        formatBytesOrDash(account.metrics_used_capacity_bytes)
+      )}</td>
       <td class="metric-cell" title="${escapeHtml(formatBytesOrDash(account.metrics_egress_bytes_24h))}">${escapeHtml(
-      formatBytesOrDash(account.metrics_egress_bytes_24h)
-    )}</td>
+        formatBytesOrDash(account.metrics_egress_bytes_24h)
+      )}</td>
       <td class="metric-cell" title="${escapeHtml(formatBytesOrDash(account.metrics_ingress_bytes_24h))}">${escapeHtml(
-      formatBytesOrDash(account.metrics_ingress_bytes_24h)
-    )}</td>
+        formatBytesOrDash(account.metrics_ingress_bytes_24h)
+      )}</td>
       <td class="metric-cell" title="${escapeHtml(formatWholeNumberOrDash(account.metrics_transactions_24h))}">${escapeHtml(
-      formatWholeNumberOrDash(account.metrics_transactions_24h)
-    )}</td>
+        formatWholeNumberOrDash(account.metrics_transactions_24h)
+      )}</td>
       <td>${escapeHtml(toLocalDate(account.last_size_scan_at))}</td>
       <td>${escapeHtml(toLocalDate(account.metrics_last_scan_at))}</td>
       <td>${progressCellMarkup(progress)}</td>
@@ -2828,22 +2828,22 @@ function renderSecurityAccounts() {
   const query = normalizeSearch(ui.securitySearchInput.value);
   const filteredAccounts = query
     ? scopedAccounts.filter((account) => {
-        const record = state.securityByAccount[account.account_id] || null;
-        const summary = securitySummaryForRecord(record);
-        return [
-          account.name,
-          account.subscription_name || account.subscription_id,
-          account.subscription_id,
-          account.resource_group_name,
-          summary.publicNetworkAccess,
-          summary.minimumTlsVersion,
-          summary.lifecycle,
-          summary.ipRuleCount,
-          summary.ipRulePreview,
-          summary.ipRulePreviewFull,
-          record?.last_error
-        ].some((field) => containsSearch(field, query));
-      })
+      const record = state.securityByAccount[account.account_id] || null;
+      const summary = securitySummaryForRecord(record);
+      return [
+        account.name,
+        account.subscription_name || account.subscription_id,
+        account.subscription_id,
+        account.resource_group_name,
+        summary.publicNetworkAccess,
+        summary.minimumTlsVersion,
+        summary.lifecycle,
+        summary.ipRuleCount,
+        summary.ipRulePreview,
+        summary.ipRulePreviewFull,
+        record?.last_error
+      ].some((field) => containsSearch(field, query));
+    })
     : scopedAccounts;
 
   if (!filteredAccounts.length) {
@@ -2861,8 +2861,7 @@ function renderSecurityAccounts() {
 
     const row = document.createElement('tr');
     row.innerHTML = `
-      <td><button class="row-toggle" data-action="toggle-security-details" data-account-id="${accountId}" title="${
-        isExpanded ? 'Collapse security details' : 'Expand security details'
+      <td><button class="row-toggle" data-action="toggle-security-details" data-account-id="${accountId}" title="${isExpanded ? 'Collapse security details' : 'Expand security details'
       }">${isExpanded ? '-' : '+'}</button></td>
       <td>${escapeHtml(account.name || '-')}</td>
       <td>${escapeHtml(account.subscription_name || account.subscription_id || '-')}</td>
@@ -3157,22 +3156,20 @@ function renderAwsTotals() {
   const deepDefault = Boolean(state.config?.aws?.defaultDeepScan);
   const requestMetricsDefault = Boolean(state.config?.aws?.defaultRequestMetrics);
   const securityDefault = Boolean(state.config?.aws?.defaultSecurityScan);
-  ui.awsNotes.textContent = `Default sync mode: ${deepDefault ? 'deep scan' : 'low-cost CloudWatch + bucket list'}. Request metrics default: ${
-    requestMetricsDefault ? 'enabled' : 'disabled'
-  }. Security scan default: ${securityDefault ? 'enabled' : 'disabled'}. Security coverage: scanned buckets ${formatWholeNumber(
-    totals.securityScanBuckets.total
-  )}, security error buckets ${formatWholeNumber(totals.securityErrorBuckets.total)}. Pricing assumptions (${totals.pricing.regionLabel}): S3 ${formatCurrency(
-    totals.pricing.s3StorageStandardGbMonth,
-    totals.pricing.currency
-  )}/GB-month, EFS ${formatCurrency(totals.pricing.efsStandardGbMonth, totals.pricing.currency)}/GB-month, egress ${formatCurrency(
-    totals.pricing.s3EgressPerGb,
-    totals.pricing.currency
-  )}/GB after ${totals.pricing.s3EgressFreeGb.toLocaleString()} GB free, requests ${formatCurrency(
-    totals.pricing.s3RequestUnitPrice,
-    totals.pricing.currency
-  )}/${totals.pricing.s3RequestUnitSize.toLocaleString()} (${totals.pricing.s3RequestRateLabel}) from ${totals.pricing.source} as of ${
-    totals.pricing.asOfDate
-  }.`;
+  ui.awsNotes.textContent = `Default sync mode: ${deepDefault ? 'deep scan' : 'low-cost CloudWatch + bucket list'}. Request metrics default: ${requestMetricsDefault ? 'enabled' : 'disabled'
+    }. Security scan default: ${securityDefault ? 'enabled' : 'disabled'}. Security coverage: scanned buckets ${formatWholeNumber(
+      totals.securityScanBuckets.total
+    )}, security error buckets ${formatWholeNumber(totals.securityErrorBuckets.total)}. Pricing assumptions (${totals.pricing.regionLabel}): S3 ${formatCurrency(
+      totals.pricing.s3StorageStandardGbMonth,
+      totals.pricing.currency
+    )}/GB-month, EFS ${formatCurrency(totals.pricing.efsStandardGbMonth, totals.pricing.currency)}/GB-month, egress ${formatCurrency(
+      totals.pricing.s3EgressPerGb,
+      totals.pricing.currency
+    )}/GB after ${totals.pricing.s3EgressFreeGb.toLocaleString()} GB free, requests ${formatCurrency(
+      totals.pricing.s3RequestUnitPrice,
+      totals.pricing.currency
+    )}/${totals.pricing.s3RequestUnitSize.toLocaleString()} (${totals.pricing.s3RequestRateLabel}) from ${totals.pricing.source} as of ${totals.pricing.asOfDate
+    }.`;
 
   renderUnifiedStats();
 }
@@ -3320,30 +3317,30 @@ function renderAwsAccounts() {
   const query = normalizeSearch(ui.awsSearchInput?.value || '');
   const filteredAccounts = query
     ? accountsWithDerived.filter((account) => {
-        const derived = account._derived || {};
-        return [
-          account.display_name,
-          account.account_id,
-          account.bucket_names_csv,
-          account.efs_names_csv,
-          account.region,
-          account.cloudwatch_region,
-          account.s3_endpoint,
-          formatWholeNumberOrDash(account.efs_count),
-          formatBytesOrDash(account.total_efs_size_bytes),
-          formatBytesOrDash(derived.storageBytes),
-          formatBytesOrDash(account.total_usage_bytes),
-          formatWholeNumberOrDash(account.total_object_count),
-          formatBytesOrDash(account.total_egress_bytes_24h),
-          formatBytesOrDash(account.total_ingress_bytes_24h),
-          formatWholeNumberOrDash(account.total_transactions_24h),
-          formatBytesOrDash(account.total_egress_bytes_30d),
-          formatBytesOrDash(account.total_ingress_bytes_30d),
-          formatWholeNumberOrDash(account.total_transactions_30d),
-          formatCurrency(derived?.costs?.totalEstimatedCost24h || 0, pricing.currency),
-          account.last_error
-        ].some((field) => containsSearch(field, query));
-      })
+      const derived = account._derived || {};
+      return [
+        account.display_name,
+        account.account_id,
+        account.bucket_names_csv,
+        account.efs_names_csv,
+        account.region,
+        account.cloudwatch_region,
+        account.s3_endpoint,
+        formatWholeNumberOrDash(account.efs_count),
+        formatBytesOrDash(account.total_efs_size_bytes),
+        formatBytesOrDash(derived.storageBytes),
+        formatBytesOrDash(account.total_usage_bytes),
+        formatWholeNumberOrDash(account.total_object_count),
+        formatBytesOrDash(account.total_egress_bytes_24h),
+        formatBytesOrDash(account.total_ingress_bytes_24h),
+        formatWholeNumberOrDash(account.total_transactions_24h),
+        formatBytesOrDash(account.total_egress_bytes_30d),
+        formatBytesOrDash(account.total_ingress_bytes_30d),
+        formatWholeNumberOrDash(account.total_transactions_30d),
+        formatCurrency(derived?.costs?.totalEstimatedCost24h || 0, pricing.currency),
+        account.last_error
+      ].some((field) => containsSearch(field, query));
+    })
     : accountsWithDerived;
 
   if (!filteredAccounts.length) {
@@ -3378,9 +3375,8 @@ function renderAwsAccounts() {
 
     const row = document.createElement('tr');
     row.innerHTML = `
-      <td><button class=\"row-toggle\" data-action=\"toggle-aws-buckets\" data-account-id=\"${accountId}\" title=\"${
-      isExpanded ? 'Collapse account details' : 'Expand account details'
-    }\">${isExpanded ? '-' : '+'}</button></td>
+      <td><button class=\"row-toggle\" data-action=\"toggle-aws-buckets\" data-account-id=\"${accountId}\" title=\"${isExpanded ? 'Collapse account details' : 'Expand account details'
+      }\">${isExpanded ? '-' : '+'}</button></td>
       <td>${escapeHtml(account.display_name || account.account_id || '-')}</td>
       <td>${escapeHtml(account.region || '-')}</td>
       <td>${escapeHtml(String(account.bucket_count ?? 0))}</td>
@@ -3433,26 +3429,26 @@ function renderAwsSecurityAccounts() {
   const query = normalizeSearch(ui.awsSecuritySearchInput?.value || '');
   const filteredAccounts = query
     ? state.awsAccounts.filter((account) => {
-        const scanned = Number(account.security_scan_bucket_count || 0);
-        const bucketCount = Number(account.bucket_count || 0);
-        const securityErrors = Number(account.security_error_bucket_count || 0);
-        const bucketNamesFromCache = Array.isArray(state.awsBucketsByAccount[account.account_id])
-          ? state.awsBucketsByAccount[account.account_id].map((bucket) => bucket.bucket_name).join(' ')
-          : '';
-        return [
-          account.display_name,
-          account.account_id,
-          account.region,
-          account.bucket_names_csv,
-          bucketNamesFromCache,
-          String(bucketCount),
-          String(scanned),
-          String(securityErrors),
-          bucketCount ? `${Math.round((scanned / Math.max(1, bucketCount)) * 100)}%` : '0%',
-          account.last_security_scan_at,
-          account.last_error
-        ].some((field) => containsSearch(field, query));
-      })
+      const scanned = Number(account.security_scan_bucket_count || 0);
+      const bucketCount = Number(account.bucket_count || 0);
+      const securityErrors = Number(account.security_error_bucket_count || 0);
+      const bucketNamesFromCache = Array.isArray(state.awsBucketsByAccount[account.account_id])
+        ? state.awsBucketsByAccount[account.account_id].map((bucket) => bucket.bucket_name).join(' ')
+        : '';
+      return [
+        account.display_name,
+        account.account_id,
+        account.region,
+        account.bucket_names_csv,
+        bucketNamesFromCache,
+        String(bucketCount),
+        String(scanned),
+        String(securityErrors),
+        bucketCount ? `${Math.round((scanned / Math.max(1, bucketCount)) * 100)}%` : '0%',
+        account.last_security_scan_at,
+        account.last_error
+      ].some((field) => containsSearch(field, query));
+    })
     : state.awsAccounts;
 
   if (!filteredAccounts.length) {
@@ -3478,9 +3474,8 @@ function renderAwsSecurityAccounts() {
 
     const row = document.createElement('tr');
     row.innerHTML = `
-      <td><button class=\"row-toggle\" data-action=\"toggle-aws-security-details\" data-account-id=\"${accountId}\" title=\"${
-      isExpanded ? 'Collapse security details' : 'Expand security details'
-    }\">${isExpanded ? '-' : '+'}</button></td>
+      <td><button class=\"row-toggle\" data-action=\"toggle-aws-security-details\" data-account-id=\"${accountId}\" title=\"${isExpanded ? 'Collapse security details' : 'Expand security details'
+      }\">${isExpanded ? '-' : '+'}</button></td>
       <td>${escapeHtml(account.display_name || account.account_id || '-')}</td>
       <td>${escapeHtml(account.region || '-')}</td>
       <td>${escapeHtml(formatWholeNumber(bucketCount))}</td>
@@ -3708,20 +3703,20 @@ function renderWasabiAccounts() {
   const query = normalizeSearch(ui.wasabiSearchInput?.value || '');
   const filteredAccounts = query
     ? state.wasabiAccounts.filter((account) => {
-        const estimate = estimateWasabiStorageCost(account.total_usage_bytes, pricing);
-        return [
-          account.display_name,
-          account.bucket_names_csv,
-          account.region,
-          account.s3_endpoint,
-          account.stats_endpoint,
-          formatBytesOrDash(account.total_usage_bytes),
-          formatWholeNumberOrDash(account.total_object_count),
-          formatCurrency(estimate.estimated24h, pricing.currency),
-          formatCurrency(estimate.estimated30d, pricing.currency),
-          account.last_error
-        ].some((field) => containsSearch(field, query));
-      })
+      const estimate = estimateWasabiStorageCost(account.total_usage_bytes, pricing);
+      return [
+        account.display_name,
+        account.bucket_names_csv,
+        account.region,
+        account.s3_endpoint,
+        account.stats_endpoint,
+        formatBytesOrDash(account.total_usage_bytes),
+        formatWholeNumberOrDash(account.total_object_count),
+        formatCurrency(estimate.estimated24h, pricing.currency),
+        formatCurrency(estimate.estimated30d, pricing.currency),
+        account.last_error
+      ].some((field) => containsSearch(field, query));
+    })
     : state.wasabiAccounts;
 
   if (!filteredAccounts.length) {
@@ -3741,9 +3736,8 @@ function renderWasabiAccounts() {
 
     const row = document.createElement('tr');
     row.innerHTML = `
-      <td><button class=\"row-toggle\" data-action=\"toggle-wasabi-buckets\" data-account-id=\"${accountId}\" title=\"${
-      isExpanded ? 'Collapse bucket details' : 'Expand bucket details'
-    }\">${isExpanded ? '-' : '+'}</button></td>
+      <td><button class=\"row-toggle\" data-action=\"toggle-wasabi-buckets\" data-account-id=\"${accountId}\" title=\"${isExpanded ? 'Collapse bucket details' : 'Expand bucket details'
+      }\">${isExpanded ? '-' : '+'}</button></td>
       <td>${escapeHtml(account.display_name || account.account_id || '-')}</td>
       <td>${escapeHtml(account.region || '-')}</td>
       <td>${escapeHtml(String(account.bucket_count ?? 0))}</td>
@@ -3934,23 +3928,22 @@ function renderVsaxGroups() {
   const query = normalizeSearch(ui.vsaxSearchInput?.value || '');
   const filteredGroups = query
     ? state.vsaxGroups.filter((group) => {
-        return [
-          group.group_name,
-          group.device_names_csv,
-          formatWholeNumber(group.device_count),
-          formatWholeNumber(group.disk_count),
-          formatBytes(group.total_allocated_bytes),
-          formatBytes(group.total_used_bytes),
-          group.last_error
-        ].some((field) => containsSearch(field, query));
-      })
+      return [
+        group.group_name,
+        group.device_names_csv,
+        formatWholeNumber(group.device_count),
+        formatWholeNumber(group.disk_count),
+        formatBytes(group.total_allocated_bytes),
+        formatBytes(group.total_used_bytes),
+        group.last_error
+      ].some((field) => containsSearch(field, query));
+    })
     : state.vsaxGroups;
 
   if (!filteredGroups.length) {
     const noSelection = !query && state.vsaxSelectedGroupNames.length === 0;
-    ui.vsaxGroupsBody.innerHTML = `<tr><td colspan=\"10\" class=\"muted\">${
-      noSelection ? 'No VSAx groups selected. Pick groups above and save selection.' : 'No VSAx rows match this search.'
-    }</td></tr>`;
+    ui.vsaxGroupsBody.innerHTML = `<tr><td colspan=\"10\" class=\"muted\">${noSelection ? 'No VSAx groups selected. Pick groups above and save selection.' : 'No VSAx rows match this search.'
+      }</td></tr>`;
     return;
   }
 
@@ -3965,9 +3958,8 @@ function renderVsaxGroups() {
 
     const row = document.createElement('tr');
     row.innerHTML = `
-      <td><button class=\"row-toggle\" data-action=\"toggle-vsax-disks\" data-group-name=\"${escapeHtml(groupName)}\" title=\"${
-      isExpanded ? 'Collapse disk details' : 'Expand disk details'
-    }\">${isExpanded ? '-' : '+'}</button></td>
+      <td><button class=\"row-toggle\" data-action=\"toggle-vsax-disks\" data-group-name=\"${escapeHtml(groupName)}\" title=\"${isExpanded ? 'Collapse disk details' : 'Expand disk details'
+      }\">${isExpanded ? '-' : '+'}</button></td>
       <td>${escapeHtml(groupName || '-')}</td>
       <td>${escapeHtml(formatWholeNumber(group.device_count))}</td>
       <td>${escapeHtml(formatWholeNumber(group.disk_count))}</td>
@@ -4002,18 +3994,18 @@ async function refreshVsaxGroupsFromCache({ forceCatalogRefresh = false } = {}) 
     .map((row) =>
       typeof row === 'string'
         ? {
-            group_name: row,
-            is_selected: 1
-          }
+          group_name: row,
+          is_selected: 1
+        }
         : row
     )
     .filter((row) => row && String(row.group_name || '').trim());
   const selectedGroupNames = Array.isArray(payload.selectedGroupNames)
     ? payload.selectedGroupNames.map((name) => String(name || '').trim()).filter(Boolean)
     : availableGroups
-        .filter((row) => Number(row.is_selected) === 1)
-        .map((row) => String(row.group_name || '').trim())
-        .filter(Boolean);
+      .filter((row) => Number(row.is_selected) === 1)
+      .map((row) => String(row.group_name || '').trim())
+      .filter(Boolean);
 
   if (state.config) {
     state.config.vsax = {
@@ -4048,9 +4040,9 @@ async function saveVsaxGroupSelection() {
     .map((row) =>
       typeof row === 'string'
         ? {
-            group_name: row,
-            is_selected: 1
-          }
+          group_name: row,
+          is_selected: 1
+        }
         : row
     )
     .filter((row) => row && String(row.group_name || '').trim());
@@ -4162,9 +4154,9 @@ async function syncVsaxGroupsUi(groupNames = [], force = true) {
       .map((row) =>
         typeof row === 'string'
           ? {
-              group_name: row,
-              is_selected: 1
-            }
+            group_name: row,
+            is_selected: 1
+          }
           : row
       )
       .filter((row) => row && String(row.group_name || '').trim());
@@ -4303,8 +4295,7 @@ async function initConnection() {
     const groups = Array.isArray(config.vsax.groups) ? config.vsax.groups : [];
     const groupFilterDefined = Boolean(config.vsax?.config?.groupFilterDefined);
     log(
-      `VSAx configured: ${groups.length} env-scoped group(s), refresh interval=${config.vsax.syncIntervalHours || 24}h, cacheTtl=${config.vsax.cacheTtlHours || 24}h, mode=${
-        groupFilterDefined ? 'env-filtered' : 'auto-discover'
+      `VSAx configured: ${groups.length} env-scoped group(s), refresh interval=${config.vsax.syncIntervalHours || 24}h, cacheTtl=${config.vsax.cacheTtlHours || 24}h, mode=${groupFilterDefined ? 'env-filtered' : 'auto-discover'
       }, groups=${groups.join(', ') || 'all groups from API'}.`
     );
     const vsaxPricing = getVsaxPricingAssumptions();
@@ -4560,9 +4551,9 @@ async function syncAwsAccountsUi(accountIds = [], options = {}) {
     log(
       `AWS sync finished (${deepScan ? 'deep' : 'low-cost'}${includeSecurity ? '+security' : ''}): accounts=${summary.accountCount || 0}, scanned=${summary.scannedAccounts || 0}, skipped=${summary.skippedAccounts || 0}, failed=${summary.failedAccounts || 0}, bucketErrors=${summary.bucketErrors || 0}, securityErrors=${summary.securityErrorBuckets || 0}, efsErrors=${summary.efsErrors || 0}, requestMetricBuckets=${summary.requestMetricBuckets || 0}, securityScanned=${summary.securityScanBuckets || 0}, efsCount=${summary.efsCount || 0}.`,
       Number(summary.failedAccounts || 0) > 0 ||
-        Number(summary.bucketErrors || 0) > 0 ||
-        Number(summary.securityErrorBuckets || 0) > 0 ||
-        Number(summary.efsErrors || 0) > 0
+      Number(summary.bucketErrors || 0) > 0 ||
+      Number(summary.securityErrorBuckets || 0) > 0 ||
+      Number(summary.efsErrors || 0) > 0
     );
     return payload;
   } finally {
@@ -5501,6 +5492,17 @@ if (ui.saveVsaxGroupsBtn) {
 if (ui.vsaxGroupList) {
   ui.vsaxGroupList.addEventListener('change', () => {
     syncVsaxButtonsDisabledState();
+  });
+}
+
+if (ui.vsaxGroupSearchInput && ui.vsaxGroupList) {
+  ui.vsaxGroupSearchInput.addEventListener('input', () => {
+    const query = normalizeSearch(ui.vsaxGroupSearchInput.value);
+    const labels = ui.vsaxGroupList.querySelectorAll('label');
+    for (const label of labels) {
+      const text = label.textContent || '';
+      label.style.display = containsSearch(text, query) ? '' : 'none';
+    }
   });
 }
 
