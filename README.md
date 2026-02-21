@@ -222,6 +222,7 @@ docker run -d \
   --name cloudstoragestudio \
   --env-file .env \
   -p 8787:8787 \
+  -v ./data:/app/data \
   ghcr.io/techcrazi/cloudstoragestudio:latest
 ```
 
